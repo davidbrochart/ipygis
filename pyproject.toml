@@ -1,0 +1,100 @@
+[build-system]
+requires = [
+  "hatchling >=1.32.0",
+  "hatch-jupyter-builder >=0.8.3",
+  "jupyterlab >=4.0.0,<5",
+  "hatch-nodejs-version >=0.3.2",
+]
+build-backend = "hatchling.build"
+
+[project]
+name = "ipygis"
+description = "A bridge to GIS libraries running in the browser"
+version = "0.0.0"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+authors = [
+  { name = "David Brochart", email = "david.brochart@gmail.com" },
+]
+keywords = [
+  "GIS",
+  "Jupyter",
+  "Widgets",
+]
+classifiers = [
+    "Framework :: Jupyter",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+dependencies = [
+  "anyio >=4.15.0",
+  "ipython",
+  "ipywidgets >=8.1.9",
+  "numpy",
+  "traitlets",
+  "xarray",
+  "zarr",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+xarray = ["zarr >=3.1.3", "xarray >=2026.7.0"]
+
+[project.urls]
+Homepage = "https://github.com/davidbrochart/ipygis"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build]
+artifacts = [
+  "ipygis/nbextension/index.*",
+  "ipygis/labextension/*.tgz",
+  "ipygis/labextension",
+]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"ipygis/nbextension" = "share/jupyter/nbextensions/ipygis"
+"ipygis/labextension" = "share/jupyter/labextensions/ipygis"
+"./install.json" = "share/jupyter/labextensions/ipygis/install.json"
+"./ipygis.json" = "etc/jupyter/nbconfig/notebook.d/ipygis.json"
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+  ".github",
+]
+
+[tool.hatch.build.hooks.jupyter-builder]
+build-function = "hatch_jupyter_builder.npm_builder"
+ensured-targets = [
+  "ipygis/nbextension/index.js",
+  "ipygis/labextension/package.json",
+]
+skip-if-exists = [
+  "ipygis/nbextension/index.js",
+  "ipygis/labextension/package.json",
+]
+dependencies = [
+  "hatch-jupyter-builder >=0.9.1",
+]
+
+[tool.hatch.build.hooks.jupyter-builder.build-kwargs]
+path = "."
+build_cmd = "build:prod"
+npm = ["jlpm"]
+
+[[tool.mypy.overrides]]
+module = [
+    "ipywidgets.*",
+    "pytest",
+]
+ignore_missing_imports = true
