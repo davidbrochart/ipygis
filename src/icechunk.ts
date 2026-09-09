@@ -1,14 +1,15 @@
 import type { DOMWidgetModel } from '@jupyter-widgets/base';
 import { decodeLzw } from './lzw.js';
 
+import { encodeObjectId12 } from 'icechunk-js';
 import type {
-  StorageGetObjectRangeArgs,
-  StorageGetObjectConditionalArgs,
-  StorageListInfo,
-  RangeQuery,
-  ReadonlySessionOptions,
-} from '@earthmover/icechunk';
-import { createHttpVirtualChunkFetcher } from '@earthmover/icechunk/http-virtual-chunks';
+  Storage,
+  ReadSession,
+  Manifest,
+  NodeSnapshot,
+  FetchClient,
+  RangeQuery as IcechunkRangeQuery,
+} from 'icechunk-js';
 import { ServerConnection } from '@jupyterlab/services';
 import type { Contents } from '@jupyterlab/services';
 
@@ -28,6 +29,7 @@ interface StoreRequest {
   store_id: string;
   repository: string;
   proxy_url: string;
+  backend?: IcechunkBackend;
   branch?: string;
   snapshot_id?: string;
   virtual_chunk_prefixes: string[];
@@ -79,6 +81,7 @@ export class IcechunkBridge {
           message.repository,
           message.proxy_url,
           message.virtual_chunk_prefixes,
+          message.backend,
         );
         if (this.closed || this.cancelled.delete(message.id)) {
           throw new Error('Widget closed while opening the repository');
@@ -242,24 +245,38 @@ export async function openIcechunk(
   repository: string,
   proxyUrl: string,
   virtualChunkPrefixes: string[] = [],
-) {
-  const { Repository, Storage } = await import('@earthmover/icechunk');
+  backend: IcechunkBackend = 'icechunk-js',
+): Promise<BrowserIcechunkRepository> {
+  if (backend === '@earthmover/icechunk') {
+    if (!globalThis.crossOriginIsolated) {
+      throw new Error(
+        '@earthmover/icechunk requires COOP/COEP headers; select the "icechunk-js" backend if your server cannot send them',
+      );
+    }
+    const { openWasmIcechunk } = await import('./icechunk-wasm.js');
+    return openWasmIcechunk(
+      contents,
+      repository,
+      proxyUrl,
+      virtualChunkPrefixes,
+    );
+  }
+  if (backend !== 'icechunk-js') {
+    throw new Error(`Unknown Icechunk backend: ${backend}`);
+  }
+  const { Repository, NotFoundError } = await import('icechunk-js');
   const repoPath = repositoryPath(repository);
-  const request = async (
-    path: string,
-    headers: HeadersInit = {},
-    method = 'GET',
-  ) => {
+  const request = async (path: string, init: RequestInit = {}) => {
     const url = await contents.getDownloadUrl(
-      `${repoPath}/${repositoryPath(path)}`,
+      [repoPath, repositoryPath(path)].filter(Boolean).join('/'),
     );
     const response = await ServerConnection.makeRequest(
       url,
-      { headers, method },
+      init,
       contents.serverSettings,
     );
     if (response.status === 404) {
-      throw new Error('ObjectNotFound');
+      throw new NotFoundError(path);
     }
     if (!response.ok) {
       throw new Error(
@@ -268,170 +285,368 @@ export async function openIcechunk(
     }
     return response;
   };
-  const list = async (prefix: string): Promise<StorageListInfo[]> => {
-    const directory = prefix.slice(0, prefix.lastIndexOf('/') + 1);
-    async function walk(relative: string): Promise<StorageListInfo[]> {
-      let directory: Contents.IModel;
+  const storage: Storage = {
+    async getObject(path, range, options) {
+      if (range && range.start === range.end) {
+        return new Uint8Array(0);
+      }
+      const response = await request(path, {
+        signal: options?.signal,
+        headers: range
+          ? { Range: `bytes=${range.start}-${range.end - 1}` }
+          : {},
+      });
+      const data = new Uint8Array(await response.arrayBuffer());
+      return range && response.status === 200
+        ? data.slice(range.start, range.end)
+        : data;
+    },
+    async exists(path, options) {
       try {
-        directory = await contents.get(
-          `${repoPath}/${repositoryPath(relative)}`,
-          {
-            type: 'directory',
-            content: true,
-          },
-        );
+        await request(path, { method: 'HEAD', signal: options?.signal });
+        return true;
       } catch (error) {
-        if (
-          error instanceof ServerConnection.ResponseError &&
-          error.response.status === 404
-        ) {
-          return [];
+        if (error instanceof NotFoundError) {
+          return false;
         }
         throw error;
       }
-      const entries: Contents.IModel[] = directory.content;
-      const results = await Promise.all(
-        entries.map(async (entry) => {
-          const path = entry.path.slice(repoPath.length + 1);
-          if (entry.type === 'directory') {
-            return walk(path);
-          }
-          return path.startsWith(prefix)
-            ? [
-                {
-                  id: path.slice(prefix.length),
-                  sizeBytes: entry.size ?? 0,
-                  createdAt: new Date(entry.last_modified),
-                },
-              ]
-            : [];
-        }),
-      );
-      return ([] as StorageListInfo[]).concat(...results);
-    }
-    return walk(directory);
-  };
-  const noWrite = async () => {
-    throw new Error('This repository connection is read-only');
-  };
-  const backend = {
-    canWrite: async () => false,
-    getObjectRange: async (
-      _err: null,
-      { path, rangeStart, rangeEnd }: StorageGetObjectRangeArgs,
-    ) => {
-      const response = await request(
-        path,
-        rangeStart === undefined
-          ? {}
-          : {
-              Range: `bytes=${rangeStart}-${rangeEnd === undefined ? '' : rangeEnd - 1}`,
+    },
+    async *listPrefix(prefix) {
+      const directory = prefix.slice(0, prefix.lastIndexOf('/') + 1);
+      async function* walk(relative: string): AsyncGenerator<string> {
+        let model: Contents.IModel;
+        try {
+          model = await contents.get(
+            [repoPath, repositoryPath(relative)].filter(Boolean).join('/'),
+            {
+              type: 'directory',
+              content: true,
             },
-      );
-      let data = new Uint8Array(await response.arrayBuffer());
-      if (response.status === 200 && rangeStart !== undefined) {
-        data = data.slice(rangeStart, rangeEnd);
+          );
+        } catch (error) {
+          if (
+            error instanceof ServerConnection.ResponseError &&
+            error.response.status === 404
+          ) {
+            return;
+          }
+          throw error;
+        }
+        for (const entry of model.content as Contents.IModel[]) {
+          const path = repoPath
+            ? entry.path.slice(repoPath.length + 1)
+            : entry.path;
+          if (entry.type === 'directory') {
+            yield* walk(path);
+          } else if (path.startsWith(prefix)) {
+            yield path;
+          }
+        }
       }
-      return {
-        data,
-        version: { etag: response.headers.get('etag') ?? undefined },
-      };
+      yield* walk(directory);
     },
-    getObjectConditional: async (
-      _err: null,
-      { path }: StorageGetObjectConditionalArgs,
-    ) => {
-      const response = await request(path);
-      return {
-        kind: 'modified',
-        data: new Uint8Array(await response.arrayBuffer()),
-        newVersion: { etag: response.headers.get('etag') ?? undefined },
-      };
-    },
-    listObjects: async (_err: null, prefix: string) => list(prefix),
-    getObjectLastModified: async (_err: null, path: string) =>
-      new Date((await request(path, {}, 'HEAD')).headers.get('last-modified')!),
-    putObject: noWrite,
-    copyObject: noWrite,
-    deleteBatch: noWrite,
   };
-  // Generated declarations omit the error-first argument and still call Uint8Array Buffer.
-  const storage = Storage.newCustom(
-    backend as unknown as Parameters<typeof Storage.newCustom>[0],
-  );
-  const authorization: Record<string, { type: string }> = {};
-  for (const prefix of virtualChunkPrefixes) {
-    authorization[prefix] = { type: 'HttpAccess' };
-  }
-  const repo = await Repository.open(storage, undefined, authorization);
-  const fetchChunk = createHttpVirtualChunkFetcher((url, options) => {
-    if (!proxyUrl) {
-      return fetch(url, options);
-    }
-    const proxy = new URL(proxyUrl);
-    proxy.searchParams.set('url', String(url));
-    return fetch(proxy, options);
-  });
-  let transportError: unknown;
-  await repo.setHttpVirtualChunkFetcher(async (err, request) => {
-    try {
-      const response = await fetchChunk(err, request);
-      if (request.etag !== undefined && response.etag === undefined) {
-        throw new Error(
-          'The TIFF response must include an ETag header exposed via CORS to validate this virtual chunk',
-        );
-      }
-      if (
-        request.lastModified !== undefined &&
-        response.lastModified === undefined
-      ) {
-        throw new Error(
-          'The TIFF response must include a Last-Modified header exposed via CORS to validate this virtual chunk',
-        );
-      }
-      return response;
-    } catch (error) {
-      transportError = error;
-      throw error;
-    }
-  });
-  // All sessions share the callback, so serialize reads across the repository.
-  let pending: Promise<unknown> = Promise.resolve();
+  const repo = await Repository.open({ storage });
+  const fetchClient = virtualChunkClient(proxyUrl, virtualChunkPrefixes);
   return {
     readonlySession: async (options: ReadonlySessionOptions) => {
-      const session = await repo.readonlySession(options);
-      // Serialize reads so a callback error is attributed to the right request.
-      const get = (key: string, range?: RangeQuery) => {
-        const result = pending.then(async () => {
-          transportError = undefined;
-          try {
-            return range
-              ? await session.store.getRange(key, range)
-              : await session.store.get(key);
-          } catch (error) {
-            throw transportError ?? error;
-          }
-        });
-        pending = result.catch(() => undefined);
-        return result;
-      };
-      return {
-        get,
-        list: () => session.store.list(),
-        listPrefix: (prefix: string) => session.store.listPrefix(prefix),
-        listDir: (prefix: string) => session.store.listDir(prefix),
-        exists: (key: string) => session.store.exists(key),
-        snapshotId: session.snapshotId,
-        // The contents manager belongs to JupyterLab and must remain alive.
-        close: () => {},
-      };
+      const session =
+        options.snapshotId !== undefined
+          ? await repo.checkoutSnapshot(options.snapshotId)
+          : await repo.checkoutBranch(options.branch ?? 'main');
+      return sessionStore(session, fetchClient);
     },
   };
 }
 
-export type BrowserIcechunkRepository = Awaited<
-  ReturnType<typeof openIcechunk>
->;
-export type BrowserIcechunkStore = Awaited<
-  ReturnType<BrowserIcechunkRepository['readonlySession']>
->;
+/** Keep permission, byte-range and checksum checks at the virtual HTTP boundary. */
+export function virtualChunkClient(
+  proxyUrl: string,
+  prefixes: string[],
+): FetchClient {
+  return {
+    async fetch(url, init) {
+      if (
+        !/^https?:/.test(url) ||
+        !prefixes.some((prefix) => url.startsWith(prefix))
+      ) {
+        throw new Error(`Unauthorized virtual chunk URL: ${url}`);
+      }
+      const headers = new Headers(init?.headers);
+      const etag = headers.get('If-Match');
+      const modified = headers.get('If-Unmodified-Since');
+      // Validate returned metadata ourselves, as the WASM adapter did. These
+      // conditional headers trigger preflights and may be ignored by proxies.
+      headers.delete('If-Match');
+      headers.delete('If-Unmodified-Since');
+      let target = url;
+      if (proxyUrl) {
+        const proxy = new URL(proxyUrl);
+        proxy.searchParams.set('url', url);
+        target = proxy.href;
+      }
+      const response = await fetch(target, {
+        ...init,
+        headers,
+        credentials: 'omit',
+        redirect: 'error',
+      });
+      try {
+        if (response.status !== 206) {
+          throw new Error(
+            `Virtual chunk request requires HTTP 206, received ${response.status}`,
+          );
+        }
+        const requested = /^bytes=(\d+)-(\d+)$/.exec(
+          headers.get('Range') ?? '',
+        );
+        const returned = /^bytes (\d+)-(\d+)\/(\d+|\*)$/.exec(
+          response.headers.get('Content-Range') ?? '',
+        );
+        if (
+          !requested ||
+          !returned ||
+          requested[1] !== returned[1] ||
+          requested[2] !== returned[2]
+        ) {
+          throw new Error(
+            'Virtual chunk response has a missing or mismatched Content-Range header',
+          );
+        }
+        const stripQuotes = (value: string) => value.replace(/^"|"$/g, '');
+        if (etag !== null) {
+          const actual = response.headers.get('ETag');
+          if (actual === null || stripQuotes(actual) !== stripQuotes(etag)) {
+            throw new Error(
+              'Virtual chunk ETag is missing or does not match the reference',
+            );
+          }
+        }
+        if (modified !== null) {
+          const actual = Date.parse(
+            response.headers.get('Last-Modified') ?? '',
+          );
+          if (!Number.isFinite(actual) || actual > Date.parse(modified)) {
+            throw new Error(
+              'Virtual chunk Last-Modified is missing, invalid, or newer than the reference',
+            );
+          }
+        }
+        return response;
+      } catch (error) {
+        await response.body?.cancel();
+        throw error;
+      }
+    },
+  };
+}
+
+/** Adapt snapshot metadata and chunk references to the Python Zarr store contract. */
+export function sessionStore(session: ReadSession, fetchClient: FetchClient) {
+  const abort = new AbortController();
+  const checkOpen = () => abort.signal.throwIfAborted();
+  const nodes = session.listNodes();
+  const metadataKeys = nodes.map(
+    (node) => `${node.path === '/' ? '' : node.path.slice(1) + '/'}zarr.json`,
+  );
+  const readOptions = {
+    fetchClient,
+    validateChecksums: true,
+    signal: abort.signal,
+  };
+  // icechunk-js 0.6.0 exposes hierarchy listing, but not stored chunk listing.
+  // Use its cached manifest loader until a public chunk-reference iterator is
+  // available. The dependency is pinned and sparse listing is covered by tests.
+  const manifests = session as unknown as {
+    loadManifest(
+      id: Uint8Array,
+      options: { signal: AbortSignal },
+    ): Promise<Manifest>;
+  };
+  const chunkKeys = async (node: NodeSnapshot) => {
+    if (node.nodeData.type !== 'array') {
+      return [];
+    }
+    const result = new Set<string>();
+    const metadata = session.getMetadata(node.path) as ArrayMetadata;
+    for (const ref of node.nodeData.manifests) {
+      const manifest = await manifests.loadManifest(ref.objectId, {
+        signal: abort.signal,
+      });
+      const array = manifest.arrays.find((entry) =>
+        entry.nodeId.every((byte, i) => byte === node.id[i]),
+      );
+      if (!array) {
+        continue;
+      }
+      for (let i = 0; i < array.numRefs; i++) {
+        const coords = array.refIndex(i);
+        if (
+          !coords.every(
+            (coord, dim) =>
+              coord >= ref.extents[dim].from && coord < ref.extents[dim].to,
+          )
+        ) {
+          continue;
+        }
+        const separator = metadata.chunk_key_encoding.configuration.separator;
+        const encoded =
+          metadata.chunk_key_encoding.name === 'default'
+            ? ['c', ...coords].join(separator)
+            : coords.length
+              ? coords.join(separator)
+              : '0';
+        result.add(
+          `${node.path === '/' ? '' : node.path.slice(1) + '/'}${encoded}`,
+        );
+      }
+    }
+    return [...result];
+  };
+  const listPrefix = async (prefix: string) => {
+    checkOpen();
+    const keys = metadataKeys.filter((key) => key.startsWith(prefix));
+    for (const node of nodes) {
+      const path = node.path === '/' ? '' : `${node.path.slice(1)}/`;
+      if (path.startsWith(prefix) || prefix.startsWith(path)) {
+        keys.push(
+          ...(await chunkKeys(node)).filter((key) => key.startsWith(prefix)),
+        );
+      }
+    }
+    return keys.sort();
+  };
+  const get = async (
+    key: string,
+    range?: RangeQuery,
+  ): Promise<Uint8Array | null> => {
+    checkOpen();
+    if (metadataKeys.includes(key)) {
+      const path =
+        key === 'zarr.json' ? '/' : `/${key.slice(0, -'/zarr.json'.length)}`;
+      const data = session.getRawMetadata(path);
+      return data === null ? null : sliceRange(data, range);
+    }
+    // Match against array metadata so both default and v2 chunk-key encodings
+    // work, including root arrays and scalar arrays.
+    for (const node of nodes) {
+      if (node.nodeData.type !== 'array') {
+        continue;
+      }
+      const prefix = node.path === '/' ? '' : `${node.path.slice(1)}/`;
+      if (!key.startsWith(prefix)) {
+        continue;
+      }
+      const metadata = session.getMetadata(node.path) as ArrayMetadata;
+      const separator = metadata.chunk_key_encoding.configuration.separator;
+      let encoded = key.slice(prefix.length);
+      if (metadata.chunk_key_encoding.name === 'default') {
+        if (encoded === 'c') {
+          encoded = '';
+        } else if (encoded.startsWith(`c${separator}`)) {
+          encoded = encoded.slice(2);
+        } else {
+          continue;
+        }
+      }
+      const parts =
+        encoded === '' || (metadata.shape.length === 0 && encoded === '0')
+          ? []
+          : encoded.split(separator);
+      if (
+        parts.length !== metadata.shape.length ||
+        parts.some((part) => !/^(0|[1-9]\d*)$/.test(part))
+      ) {
+        continue;
+      }
+      const coords = parts.map(Number);
+      if (!coords.every(Number.isSafeInteger)) {
+        return null;
+      }
+      if (
+        range &&
+        (('suffixLength' in range && range.suffixLength === 0) ||
+          ('length' in range && range.length === 0))
+      ) {
+        return (await exists(key)) ? new Uint8Array(0) : null;
+      }
+      if (range && ('suffixLength' in range || range.length !== undefined)) {
+        return session.getChunkRange(
+          node.path,
+          coords,
+          range as IcechunkRangeQuery,
+          readOptions,
+        );
+      }
+      const data = await session.getChunk(node.path, coords, readOptions);
+      return data === null ? null : sliceRange(data, range);
+    }
+    return null;
+  };
+  const exists = async (key: string) => (await listPrefix(key)).includes(key);
+  return {
+    get,
+    exists,
+    list: () => listPrefix(''),
+    listPrefix,
+    async listDir(prefix: string) {
+      checkOpen();
+      prefix = prefix.replace(/\/$/, '');
+      const node = session.getNode(prefix ? `/${prefix}` : '/');
+      if (node?.nodeData.type === 'group') {
+        return [
+          'zarr.json',
+          ...session
+            .listChildren(node.path)
+            .filter((child) => child.path !== node.path)
+            .map((child) => child.path.split('/').pop()!),
+        ].sort();
+      }
+      const start = prefix ? `${prefix}/` : '';
+      return [
+        ...new Set(
+          (await listPrefix(start)).map(
+            (key) => key.slice(start.length).split('/')[0],
+          ),
+        ),
+      ].sort();
+    },
+    snapshotId: encodeObjectId12(session.getSnapshotId()),
+    close: () => abort.abort(new Error('Browser Icechunk session is closed')),
+  };
+}
+
+function sliceRange(data: Uint8Array, range?: RangeQuery) {
+  if (!range) {
+    return data;
+  }
+  if ('suffixLength' in range) {
+    return range.suffixLength === 0
+      ? data.slice(0, 0)
+      : data.slice(-range.suffixLength);
+  }
+  return data.slice(
+    range.offset,
+    range.length === undefined ? undefined : range.offset + range.length,
+  );
+}
+
+interface ArrayMetadata {
+  shape: number[];
+  chunk_key_encoding: { name: string; configuration: { separator: string } };
+}
+type RangeQuery =
+  { offset: number; length?: number } | { suffixLength: number };
+interface ReadonlySessionOptions {
+  branch?: string;
+  snapshotId?: string;
+}
+
+export type IcechunkBackend = 'icechunk-js' | '@earthmover/icechunk';
+export interface BrowserIcechunkRepository {
+  readonlySession(
+    options: ReadonlySessionOptions,
+  ): Promise<BrowserIcechunkStore>;
+}
+export type BrowserIcechunkStore = ReturnType<typeof sessionStore>;

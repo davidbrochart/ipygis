@@ -1313,42 +1313,84 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@earthmover/icechunk@file:./.local/icechunk::locator=ipygis%40workspace%3A.":
-  version: 2.2.0
-  resolution: "@earthmover/icechunk@file:./.local/icechunk#./.local/icechunk::hash=9a9524&locator=ipygis%40workspace%3A."
-  dependencies:
-    "@emnapi/core": 2.0.0-alpha.4
-    "@emnapi/runtime": 2.0.0-alpha.4
-    "@napi-rs/wasm-runtime": ^1.2.3
-  checksum: bfc3402cc9d046bf25d69a9df06c12b10ab854a2afc716c7313ac28e8da6490121a2531102c4e463a3fa7856d94dbb045b0bfeaa50361f8b2f8a81b06cb92edd
+"@earthmover/icechunk-darwin-arm64@npm:2.0.3":
+  version: 2.0.3
+  resolution: "@earthmover/icechunk-darwin-arm64@npm:2.0.3"
+  conditions: os=darwin & cpu=arm64
   languageName: node
   linkType: hard
 
-"@emnapi/core@npm:2.0.0-alpha.4":
-  version: 2.0.0-alpha.4
-  resolution: "@emnapi/core@npm:2.0.0-alpha.4"
-  dependencies:
-    "@emnapi/wasi-threads": 2.0.1
-    tslib: ^2.4.0
-  checksum: 37f6c62ec71671567512461cdd9d1ae0729353a5b6e062049e580318a742e2324ad989404fb15313369b3459cff9120ef2306a94bdaa2cc43af09980e48f6561
+"@earthmover/icechunk-linux-x64-gnu@npm:2.0.3":
+  version: 2.0.3
+  resolution: "@earthmover/icechunk-linux-x64-gnu@npm:2.0.3"
+  conditions: os=linux & cpu=x64 & libc=glibc
   languageName: node
   linkType: hard
 
-"@emnapi/runtime@npm:2.0.0-alpha.4":
-  version: 2.0.0-alpha.4
-  resolution: "@emnapi/runtime@npm:2.0.0-alpha.4"
+"@earthmover/icechunk-wasm32-wasi@npm:2.0.3":
+  version: 2.0.3
+  resolution: "@earthmover/icechunk-wasm32-wasi@npm:2.0.3"
   dependencies:
-    tslib: ^2.4.0
-  checksum: 842af6fc43056aea7e52093492ad6ac0226d7d08519d19ba294624e691e842f7444f61e7e7381fc5ff3aeb9816129b527b5bbba8b1d25d28cd851753d348fd46
+    "@emnapi/core": 1.9.2
+    "@emnapi/runtime": 1.9.2
+    "@napi-rs/wasm-runtime": ^1.1.4
+  conditions: cpu=wasm32
   languageName: node
   linkType: hard
 
-"@emnapi/wasi-threads@npm:2.0.1":
-  version: 2.0.1
-  resolution: "@emnapi/wasi-threads@npm:2.0.1"
+"@earthmover/icechunk-win32-x64-msvc@npm:2.0.3":
+  version: 2.0.3
+  resolution: "@earthmover/icechunk-win32-x64-msvc@npm:2.0.3"
+  conditions: os=win32 & cpu=x64
+  languageName: node
+  linkType: hard
+
+"@earthmover/icechunk@npm:^2.0.3":
+  version: 2.0.3
+  resolution: "@earthmover/icechunk@npm:2.0.3"
+  dependencies:
+    "@earthmover/icechunk-darwin-arm64": 2.0.3
+    "@earthmover/icechunk-linux-x64-gnu": 2.0.3
+    "@earthmover/icechunk-wasm32-wasi": 2.0.3
+    "@earthmover/icechunk-win32-x64-msvc": 2.0.3
+  dependenciesMeta:
+    "@earthmover/icechunk-darwin-arm64":
+      optional: true
+    "@earthmover/icechunk-linux-x64-gnu":
+      optional: true
+    "@earthmover/icechunk-wasm32-wasi":
+      optional: true
+    "@earthmover/icechunk-win32-x64-msvc":
+      optional: true
+  checksum: eac13ff9a98b1336ef014236abfee1370b2c248d1a28111a4052d6704319825572fccdb17926705d2a75cfc253fa74a38f9a8305467ee12a4b35e910d9aab426
+  languageName: node
+  linkType: hard
+
+"@emnapi/core@npm:1.9.2":
+  version: 1.9.2
+  resolution: "@emnapi/core@npm:1.9.2"
+  dependencies:
+    "@emnapi/wasi-threads": 1.2.1
+    tslib: ^2.4.0
+  checksum: 52904e04c2ec25a89eed2fab3ece3bd28efe4725558d415c9b6a0b2b57e51c64ec5fac0314d96caa7ee2792bdc673a1f9e3353d7ea1be5def724e9e0b09bfeed
+  languageName: node
+  linkType: hard
+
+"@emnapi/runtime@npm:1.9.2":
+  version: 1.9.2
+  resolution: "@emnapi/runtime@npm:1.9.2"
   dependencies:
     tslib: ^2.4.0
-  checksum: ae615c4184c744a0889437955b69f495fb4f1425c02dd3c4e8744e03527288b84f5726f1d9aff8ec5af43b5fbc89a0ee1715202589a8899fb14e1c478c4835dd
+  checksum: fc80864e62cd18cfada04a2b59e17e4aa0fdfd117af38c0ea0a4024e66f7255e6cb54301143e8dec8040523d7db2b9edb4acb7738e86cdd2ca8d9c443b6d7b13
+  languageName: node
+  linkType: hard
+
+"@emnapi/wasi-threads@npm:1.2.1":
+  version: 1.2.1
+  resolution: "@emnapi/wasi-threads@npm:1.2.1"
+  dependencies:
+    tslib: ^2.4.0
+  checksum: a2360553f8056e3e676f708b7e1639bae84212714ace6ee13b6e0ce667b3057bea6d120c7a4f5b32851f93d287fd4b5a0fd58b14f43363d365cb83bc538254d1
   languageName: node
   linkType: hard
 
@@ -2056,7 +2098,14 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@napi-rs/wasm-runtime@npm:^1.2.3":
+"@msgpack/msgpack@npm:^3.1.3":
+  version: 3.1.3
+  resolution: "@msgpack/msgpack@npm:3.1.3"
+  checksum: b76416a5c52ec1364a78902a43b33d18d2813f469165fe5d4ad22d2b67f1269f7f2ee660a5fee764de117aa47116db61a84aa57cccb9007d7fc7abd01a78ef33
+  languageName: node
+  linkType: hard
+
+"@napi-rs/wasm-runtime@npm:^1.1.4":
   version: 1.2.3
   resolution: "@napi-rs/wasm-runtime@npm:1.2.3"
   dependencies:
@@ -4389,6 +4438,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"flatbuffers@npm:^25.9.23":
+  version: 25.9.23
+  resolution: "flatbuffers@npm:25.9.23"
+  checksum: f20704f6b6bd57c19067dedf1fd0c2635c56cadb41f08470536f61fbb61503f78dfc5122b8d067763c247eee6c29eb382b56cf8d44e56fe78341392f7e2f021e
+  languageName: node
+  linkType: hard
+
 "flatted@npm:^3.2.9":
   version: 3.4.4
   resolution: "flatted@npm:3.4.4"
@@ -4852,6 +4908,21 @@ __metadata:
   languageName: node
   linkType: hard
 
+"icechunk-js@npm:0.6.0":
+  version: 0.6.0
+  resolution: "icechunk-js@npm:0.6.0"
+  dependencies:
+    "@msgpack/msgpack": ^3.1.3
+    flatbuffers: ^25.9.23
+  peerDependencies:
+    zarrita: ^0.5.0 || ^0.6.0 || ^0.7.0
+  peerDependenciesMeta:
+    zarrita:
+      optional: true
+  checksum: 60a682ea1343bbb42b6bd422e24b93b7972f148e587f2d70445432471fe3def019ca53b6c8551f56dce6a7dab7d1f48d4d5200e905379aa2b8dbc05c5b0a2868
+  languageName: node
+  linkType: hard
+
 "iconv-lite@npm:0.6.3, iconv-lite@npm:^0.6.2, iconv-lite@npm:^0.6.3":
   version: 0.6.3
   resolution: "iconv-lite@npm:0.6.3"
@@ -4957,7 +5028,7 @@ __metadata:
     "@babel/core": ^7.23.7
     "@babel/preset-env": ^7.23.8
     "@developmentseed/lzw-tiff-decoder": ^0.2.2
-    "@earthmover/icechunk": "file:./.local/icechunk"
+    "@earthmover/icechunk": ^2.0.3
     "@jupyter-widgets/base": ^1.1.10 || ^2 || ^3 || ^4 || ^5 || ^6
     "@jupyter-widgets/base-manager": ^1.0.7
     "@jupyterlab/builder": ^4.0.11
@@ -4974,6 +5045,7 @@ __metadata:
     eslint-config-prettier: ^9.1.0
     eslint-plugin-prettier: ^5.1.3
     fs-extra: ^11.2.0
+    icechunk-js: 0.6.0
     identity-obj-proxy: ^3.0.0
     jest: ^29.7.0
     jest-environment-jsdom: ^29.7.0

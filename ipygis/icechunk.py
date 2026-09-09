@@ -1,7 +1,7 @@
 """Browser access to Icechunk repositories and read-only sessions."""
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from dataclasses import dataclass
 from weakref import WeakValueDictionary
 import anyio
@@ -39,8 +39,16 @@ class Repository:
 
     @classmethod
     async def open_async(cls, storage: Storage, *, proxy_url="", virtual_chunk_prefixes=None,
-                   gis: GIS | None = None) -> Repository:
-        """Open an existing repository using the supplied storage configuration."""
+                   gis: GIS | None = None,
+                   backend: Literal["icechunk-js", "@earthmover/icechunk"] = "icechunk-js") -> Repository:
+        """Open an existing repository with the selected browser implementation.
+
+        ``icechunk-js`` (default) runs without shared memory.
+        ``@earthmover/icechunk`` uses WASM and requires COOP/COEP headers.
+        The choice applies to this repository and all sessions created from it.
+        """
+        if backend not in ("icechunk-js", "@earthmover/icechunk"):
+            raise ValueError(f"Unknown Icechunk backend: {backend}")
         if not isinstance(storage, Storage):
             raise TypeError('storage must be a Storage; use jupyter_storage(path)')
         from .gis import GIS
@@ -52,7 +60,7 @@ class Repository:
             with anyio.fail_after(30):
                 await gis._ready.wait()
             result, _ = await gis._request(
-                'open', repository=storage.path, proxy_url=proxy_url,
+                'open', repository=storage.path, proxy_url=proxy_url, backend=backend,
                 virtual_chunk_prefixes=list(virtual_chunk_prefixes or []),
             )
             try:

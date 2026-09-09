@@ -10,7 +10,7 @@ function fixture(readonlySession) {
     send(content, _callbacks, buffers) { responses.push({ ...content, buffers }); },
   };
   const bridge = new IcechunkBridge(model, undefined);
-  // Substitute the WASM repository; exercise the real message routing and lifecycle.
+  // Substitute the repository; exercise the real message routing and lifecycle.
   bridge.repositories.set('repo', { readonlySession });
   const request = (id, operation, extra = {}) => model.receive({
     type: 'icechunk_request', id, operation, store_id: 'repo', ...extra,
