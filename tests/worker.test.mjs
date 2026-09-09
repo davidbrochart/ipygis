@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import worker from '../worker.js';
+import worker from './worker.js';
 
 const target = 'https://data.hydrosheds.org/file/hydrosheds-v2/ACC/1s/tile.tif';
 const url = `https://proxy.test/?url=${encodeURIComponent(target)}`;

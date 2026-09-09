@@ -29,6 +29,7 @@ interface StoreRequest {
   store_id: string;
   repository: string;
   proxy_url: string;
+  backend?: IcechunkBackend;
   branch?: string;
   snapshot_id?: string;
   virtual_chunk_prefixes: string[];
@@ -80,6 +81,7 @@ export class IcechunkBridge {
           message.repository,
           message.proxy_url,
           message.virtual_chunk_prefixes,
+          message.backend,
         );
         if (this.closed || this.cancelled.delete(message.id)) {
           throw new Error('Widget closed while opening the repository');
@@ -243,7 +245,25 @@ export async function openIcechunk(
   repository: string,
   proxyUrl: string,
   virtualChunkPrefixes: string[] = [],
-) {
+  backend: IcechunkBackend = 'icechunk-js',
+): Promise<BrowserIcechunkRepository> {
+  if (backend === '@earthmover/icechunk') {
+    if (!globalThis.crossOriginIsolated) {
+      throw new Error(
+        '@earthmover/icechunk requires COOP/COEP headers; select the "icechunk-js" backend if your server cannot send them',
+      );
+    }
+    const { openWasmIcechunk } = await import('./icechunk-wasm.js');
+    return openWasmIcechunk(
+      contents,
+      repository,
+      proxyUrl,
+      virtualChunkPrefixes,
+    );
+  }
+  if (backend !== 'icechunk-js') {
+    throw new Error(`Unknown Icechunk backend: ${backend}`);
+  }
   const { Repository, NotFoundError } = await import('icechunk-js');
   const repoPath = repositoryPath(repository);
   const request = async (path: string, init: RequestInit = {}) => {
@@ -623,7 +643,10 @@ interface ReadonlySessionOptions {
   snapshotId?: string;
 }
 
-export type BrowserIcechunkRepository = Awaited<
-  ReturnType<typeof openIcechunk>
->;
+export type IcechunkBackend = 'icechunk-js' | '@earthmover/icechunk';
+export interface BrowserIcechunkRepository {
+  readonlySession(
+    options: ReadonlySessionOptions,
+  ): Promise<BrowserIcechunkStore>;
+}
 export type BrowserIcechunkStore = ReturnType<typeof sessionStore>;

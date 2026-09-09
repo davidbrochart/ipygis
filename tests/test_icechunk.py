@@ -161,3 +161,34 @@ async def test_failed_metadata_prefetch_releases_session():
     assert connection.calls[-1] == ('close', {'store_id': 'session-1'})
     assert not repository._closed
     repository.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize('backend', ['icechunk-js', '@earthmover/icechunk'])
+async def test_backend_is_forwarded_when_opening_repository(backend):
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from ipygis.icechunk import jupyter_storage
+
+    ready = anyio.Event()
+    ready.set()
+    connection = SimpleNamespace(
+        _ready=ready,
+        _request=AsyncMock(return_value=({'repository_id': 'repo'}, [])),
+    )
+    repository = await Repository.open_async(
+        jupyter_storage('example.icechunk'), gis=connection, backend=backend,
+    )
+    assert connection._request.call_args.kwargs['backend'] == backend
+    await repository.aclose()
+
+
+@pytest.mark.anyio
+async def test_invalid_backend_fails_before_creating_widget():
+    from unittest.mock import patch
+    from ipygis.icechunk import jupyter_storage
+
+    with patch('ipygis.gis.GIS') as connection:
+        with pytest.raises(ValueError, match='backend'):
+            await Repository.open_async(jupyter_storage('example.icechunk'), backend='unknown')
+        connection.assert_not_called()

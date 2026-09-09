@@ -124,3 +124,16 @@ test('short virtual responses fail instead of returning truncated data', async (
   const store = await repo.readonlySession({});
   await assert.rejects(store.get('sparse/c/2'), /size mismatch/);
 });
+
+test('backend selection rejects unknown names and guards WASM before loading it', async () => {
+  await assert.rejects(openIcechunk(undefined, 'repository', '', [], 'unknown'), /Unknown Icechunk backend/);
+  await assert.rejects(openIcechunk(undefined, 'repository', '', [], '@earthmover/icechunk'), /COOP\/COEP/);
+});
+
+test('published WASM backend rejects unsupported virtual-chunk settings before initialization', async () => {
+  const { openWasmIcechunk } = await import('../lib/icechunk-wasm.js');
+  await assert.rejects(
+    openWasmIcechunk(undefined, 'repository', 'https://proxy.test/', ['https://example.test/']),
+    /published.*does not support.*icechunk-js/,
+  );
+});
