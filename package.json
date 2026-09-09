@@ -46,14 +46,13 @@
     "watch": "npm-run-all -p watch:*",
     "watch:lib": "tsc -w",
     "watch:nbextension": "webpack --watch --mode=development",
-    "watch:labextension": "jupyter labextension watch .",
-    "prepare:icechunk": "node scripts/prepare-icechunk.mjs"
+    "watch:labextension": "jupyter labextension watch ."
   },
   "dependencies": {
     "@developmentseed/lzw-tiff-decoder": "^0.2.2",
-    "@earthmover/icechunk": "file:./.local/icechunk",
     "@jupyter-widgets/base": "^1.1.10 || ^2 || ^3 || ^4 || ^5 || ^6",
-    "@jupyterlab/services": "^7.6.3"
+    "@jupyterlab/services": "^7.6.3",
+    "icechunk-js": "0.6.0"
   },
   "devDependencies": {
     "@babel/core": "^7.23.7",
@@ -99,10 +98,6 @@
       "@jupyter-widgets/base": {
         "bundled": false,
         "singleton": true
-      },
-      "@earthmover/icechunk": {
-        "bundled": true,
-        "requiredVersion": false
       }
     }
   }

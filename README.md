@@ -20,15 +20,14 @@ jlpm run build
 
 ## Running the example notebooks
 
-Start JupyterLab from the repository root with the supplied server configuration:
+Start JupyterLab from the repository root:
 
 ```bash
-jupyter lab --config=./jupyter_server_config.json
+jupyter lab
 ```
 
-Icechunk's WASM workers share memory using `SharedArrayBuffer`. The configuration
-sets `Cross-Origin-Opener-Policy: same-origin` and
-`Cross-Origin-Embedder-Policy: require-corp` so the browser allows shared memory.
+The browser uses [icechunk-js](https://github.com/EarthyScience/icechunk-js), a
+TypeScript Icechunk reader. No COOP/COEP headers or shared memory are required.
 
 ### HydroSHEDS browser read
 
@@ -107,7 +106,7 @@ extra round trip to the browser for decoding; this prototype does not optimize
 that transfer yet.
 
 The browser reads repository files using JupyterLab's `ContentsManager` and
-`ServerConnection`. Icechunk WASM resolves virtual chunks, and browser `fetch`
+`ServerConnection`. `icechunk-js` resolves virtual chunks, and browser `fetch`
 requests their TIFF byte ranges through the configured proxy. No remote raster
 I/O occurs in the Python kernel.
 
@@ -136,21 +135,20 @@ jlpm test
 These use a local synthetic Zarr dataset and a fake browser transport; they do
 not contact HydroSHEDS or the proxy.
 
-This example uses the experimental WASM virtual-chunk changes in the sibling
-Icechunk checkout. After building that checkout's WASM package, prepare the local
-dependency before installing/building ipygis:
+Install and build the frontend with:
 
 ```bash
-jlpm prepare:icechunk /path/to/icechunk-wasm-build
 jlpm install
 jlpm build
 ```
 
-The optional second argument to `prepare:icechunk` is the `icechunk-js` source
-directory (default: `../icechunk/icechunk-js`). The generated `.local/icechunk`
-package is ignored by Git; it contains the WASM artifacts and HTTP transport
-helper. Re-run these commands after rebuilding Icechunk. Restart the notebook
+No sibling Icechunk checkout or custom WASM build is needed. Restart the notebook
 kernel and refresh JupyterLab after updating the widget.
+
+The reader is pinned to `icechunk-js` 0.6.0: full Zarr key listing currently uses
+its internal cached manifest loader because its public API only lists nodes.
+The integration tests cover sparse chunk listings; revisit this adapter when
+upgrading the reader or when it exposes a public chunk-reference iterator.
 
 The current HydroSHEDS host supplies a Backblaze `x-bz-upload-timestamp` in
 milliseconds instead of `Last-Modified`. The existing store uses a modification
