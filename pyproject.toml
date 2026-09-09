@@ -10,7 +10,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ipygis"
 description = "A bridge to GIS libraries running in the browser"
-version = "0.0.0"
+version = "0.1.0"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"
