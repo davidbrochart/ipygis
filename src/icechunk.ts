@@ -1,5 +1,6 @@
 import type { DOMWidgetModel } from '@jupyter-widgets/base';
 import { decodeLzw } from './lzw.js';
+import { requestContents } from './contents.js';
 
 import { encodeObjectId12 } from 'icechunk-js';
 import type {
@@ -267,13 +268,10 @@ export async function openIcechunk(
   const { Repository, NotFoundError } = await import('icechunk-js');
   const repoPath = repositoryPath(repository);
   const request = async (path: string, init: RequestInit = {}) => {
-    const url = await contents.getDownloadUrl(
+    const response = await requestContents(
+      contents,
       [repoPath, repositoryPath(path)].filter(Boolean).join('/'),
-    );
-    const response = await ServerConnection.makeRequest(
-      url,
       init,
-      contents.serverSettings,
     );
     if (response.status === 404) {
       throw new NotFoundError(path);

@@ -3,24 +3,25 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import { ServerConnection } from '@jupyterlab/services';
 import { openIcechunk, virtualChunkClient } from '../lib/icechunk.js';
+import { requestContents } from '../lib/contents.js';
 
 const fixture = JSON.parse(await readFile(new URL('./fixtures/icechunk.json', import.meta.url)));
 const objects = new Map(Object.entries(fixture.objects).map(([path, hex]) => [path, Uint8Array.from(Buffer.from(hex, 'hex'))]));
 function contents() {
   const reads = [];
   const manager = {
-    serverSettings: ServerConnection.makeSettings({
-      baseUrl: 'http://localhost/',
-      fetch: async (request) => {
-        const path = new URL(request.url).pathname.replace('/files/repository/', '');
-        reads.push(path);
-        const data = objects.get(path);
-        // Like some Jupyter file handlers, ignore Range and return a full object.
-        return new Response(request.method === 'HEAD' ? null : data, { status: data ? 200 : 404 });
-      },
-    }),
-    async getDownloadUrl(path) { return `http://localhost/files/${path}`; },
-    async get(path) {
+    async get(path, options) {
+      if (options.type === 'file' || options.content === false) {
+        const relative = path.replace(/^repository\//, '');
+        reads.push(relative);
+        const data = objects.get(relative);
+        if (!data) throw new ServerConnection.ResponseError(new Response(null, { status: 404 }));
+        return {
+          format: 'base64',
+          content: options.content === false ? null : Buffer.from(data).toString('base64'),
+          last_modified: '2026-09-10T12:00:00Z',
+        };
+      }
       const prefix = path.replace(/^repository\/?/, '').replace(/\/$/, '');
       const start = prefix ? `${prefix}/` : '';
       const entries = new Map();
@@ -35,6 +36,22 @@ function contents() {
   };
   return { manager, reads };
 }
+
+test('contents reads preserve binary bytes, metadata, missing files and cancellation', async () => {
+  const { manager, reads } = contents();
+  const path = objects.keys().next().value;
+  const response = await requestContents(manager, `repository/${path}`);
+  assert.deepEqual(new Uint8Array(await response.arrayBuffer()), objects.get(path));
+  const head = await requestContents(manager, `repository/${path}`, { method: 'HEAD' });
+  assert.equal(head.headers.get('Last-Modified'), 'Thu, 10 Sep 2026 12:00:00 GMT');
+  assert.equal(await head.text(), '');
+  assert.equal((await requestContents(manager, 'repository/missing')).status, 404);
+  const count = reads.length;
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(requestContents(manager, `repository/${path}`, { signal: controller.signal }), { name: 'AbortError' });
+  assert.equal(reads.length, count);
+});
 
 test('Python repository: Jupyter storage, snapshots, sparse listings, ranges and no shared memory', async () => {
   const shared = globalThis.SharedArrayBuffer;

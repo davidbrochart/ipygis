@@ -7,6 +7,7 @@ import type {
 } from '@earthmover/icechunk';
 import { ServerConnection } from '@jupyterlab/services';
 import type { Contents } from '@jupyterlab/services';
+import { requestContents } from './contents.js';
 function repositoryPath(path: string): string {
   const parts = path.split('/').filter(Boolean);
   if (parts.some((part) => part === '.' || part === '..')) {
@@ -34,13 +35,10 @@ export async function openWasmIcechunk(
     headers: HeadersInit = {},
     method = 'GET',
   ) => {
-    const url = await contents.getDownloadUrl(
+    const response = await requestContents(
+      contents,
       `${repoPath}/${repositoryPath(path)}`,
-    );
-    const response = await ServerConnection.makeRequest(
-      url,
       { headers, method },
-      contents.serverSettings,
     );
     if (response.status === 404) {
       throw new Error('ObjectNotFound');
