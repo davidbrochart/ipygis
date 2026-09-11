@@ -9,8 +9,12 @@ test('array RPC works with an independent byte store and checks its lifetime', a
     chunk_key_encoding: { name: 'default', configuration: { separator: '/' } },
     fill_value: 0, codecs: [{ name: 'bytes' }],
   }));
-  const objects = new Map([['a/zarr.json', metadata], ['a/c', Uint8Array.of(7)]]);
-  const stores = new Map([['memory', { async get(key) { return objects.get(key) ?? null; } }]]);
+  const group = new TextEncoder().encode(JSON.stringify({ zarr_format: 3, node_type: 'group', attributes: {} }));
+  const objects = new Map([['zarr.json', group], ['a/zarr.json', metadata], ['a/c', Uint8Array.of(7)]]);
+  const stores = new Map([['memory', {
+    async get(key) { return objects.get(key) ?? null; },
+    async listDir(prefix) { assert.equal(prefix, ''); return ['a', 'zarr.json']; },
+  }]]);
   const replies = [];
   const model = {
     on(_event, handler, context) { this.receive = message => handler.call(context, message); },
@@ -29,6 +33,8 @@ test('array RPC works with an independent byte store and checks its lifetime', a
   assert.equal(replies.at(-1).result.kind, 'array');
   await request('zarr_get', { selection: [] });
   assert.equal(new Uint8Array(replies.at(-1).buffers[0])[0], 7);
+  await request('zarr_members', { path: '' });
+  assert.deepEqual(replies.at(-1).result, ['a']);
   const count = replies.length;
   await request('get', { type: 'icechunk_request' });
   assert.equal(replies.length, count);

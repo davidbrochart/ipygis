@@ -4,6 +4,7 @@ import { decodeLzw } from './lzw.js';
 /** The browser byte-store contract, independent of the repository implementation. */
 export interface ByteStore {
   get(key: string): Promise<Uint8Array | null>;
+  listDir?(prefix: string): Promise<string[]>;
 }
 
 const sizes: Record<string, number> = {
@@ -25,7 +26,9 @@ zarr.registry.set('imagecodecs_lzw', async () => ({
       throw new Error('Unsupported imagecodecs_lzw configuration');
     }
     const itemsize = sizes[meta.dataType];
-    if (!itemsize) throw new Error(`Unsupported TIFF dtype: ${meta.dataType}`);
+    if (!itemsize) {
+      throw new Error(`Unsupported TIFF dtype: ${meta.dataType}`);
+    }
     const size = meta.shape.reduce((a, b) => a * b, itemsize);
     return {
       kind: 'bytes_to_bytes',
@@ -52,16 +55,32 @@ function location(store: ByteStore, path: string) {
 
 export async function openNode(store: ByteStore, path: string) {
   const node = await zarr.open(location(store, path));
-  if (node.kind === 'group') return { kind: node.kind, attrs: node.attrs };
-  if (!sizes[node.dtype])
+  if (node.kind === 'group') {
+    return { kind: node.kind, attrs: node.attrs };
+  }
+  if (!sizes[node.dtype] && node.dtype !== 'string') {
     throw new Error(`Unsupported browser array dtype: ${node.dtype}`);
+  }
   return {
     kind: node.kind,
     attrs: node.attrs,
     shape: node.shape,
     chunks: node.chunks,
     dtype: node.dtype,
+    dimension_names: node.dimensionNames ?? null,
   };
+}
+
+/** List immediate group children using the byte store's directory capability. */
+export async function listMembers(store: ByteStore, path: string) {
+  await zarr.open(location(store, path), { kind: 'group' });
+  if (!store.listDir) {
+    throw new Error('This browser store does not support group listing');
+  }
+  const metadata = new Set(['zarr.json', '.zgroup', '.zattrs', '.zmetadata']);
+  return (await store.listDir(path))
+    .filter((name) => !metadata.has(name))
+    .sort();
 }
 
 export type Selection = (number | [number, number, number])[];
@@ -72,17 +91,20 @@ export async function readArray(
   selection: Selection,
 ) {
   const array = await zarr.open(location(store, path), { kind: 'array' });
-  if (!sizes[array.dtype])
+  if (!sizes[array.dtype] && array.dtype !== 'string') {
     throw new Error(`Unsupported browser array dtype: ${array.dtype}`);
-  if (selection.length !== array.shape.length)
+  }
+  if (selection.length !== array.shape.length) {
     throw new Error('Selection rank mismatch');
+  }
   // Keep integer-selected axes until after reading, so even point selections
   // travel as binary data (including exact int64 values), never JSON numbers.
   const slices = selection.map((s, axis) => {
     const size = array.shape[axis];
     if (typeof s === 'number') {
-      if (!Number.isSafeInteger(s) || s < 0 || s >= size)
+      if (!Number.isSafeInteger(s) || s < 0 || s >= size) {
         throw new Error('Index out of bounds');
+      }
       return zarr.slice(s, s + 1);
     }
     const [start, stop, step] = s;
@@ -101,8 +123,9 @@ export async function readArray(
   const littleEndian = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
   const shape: number[] = [];
   for (const s of selection) {
-    if (typeof s !== 'number')
+    if (typeof s !== 'number') {
       shape.push(Math.max(0, Math.ceil((s[1] - s[0]) / s[2])));
+    }
   }
   if (shape.includes(0)) {
     // Zarrita currently rejects empty selections; return the NumPy-compatible
@@ -111,6 +134,7 @@ export async function readArray(
       result: {
         shape,
         strides: shape.map(() => 0),
+        ...(array.dtype === 'string' ? { values: [] as string[] } : {}),
         dtype: array.dtype,
         byteorder: littleEndian ? '<' : '>',
       },
@@ -121,6 +145,31 @@ export async function readArray(
     array.shape.length === 0
       ? await array.getChunk([], undefined, { useSharedArrayBuffer: false })
       : await zarr.get(array, slices, { useSharedArrayBuffer: false });
+  if (array.dtype === 'string') {
+    if (
+      !Array.isArray(result.data) ||
+      !result.data.every((value) => typeof value === 'string')
+    ) {
+      throw new Error('Expected a string array result');
+    }
+    // Pack the selected view in C order; JSON preserves Unicode and avoids
+    // transferring JavaScript string references as binary pointers.
+    const values: string[] = [];
+    const visit = (axis: number, offset: number) => {
+      if (axis === result.shape.length) {
+        values.push((result.data as string[])[offset]);
+        return;
+      }
+      for (let i = 0; i < result.shape[axis]; i++) {
+        visit(axis + 1, offset + i * result.stride[axis]);
+      }
+    };
+    visit(0, 0);
+    return {
+      result: { shape, dtype: 'string', values },
+      data: new Uint8Array(0),
+    };
+  }
   if (
     typeof result !== 'object' ||
     result === null ||

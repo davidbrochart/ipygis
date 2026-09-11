@@ -1,6 +1,6 @@
 """Read-only Zarr-Python-like async interface backed by Zarrita in the browser.
 
-Supports fixed-width integer and floating-point arrays. Reads return NumPy
+Supports fixed-width integer, floating-point, and Zarr v3 string arrays. Reads return NumPy
 arrays (or NumPy scalars for point selections). Writing, fancy indexing,
 new axes, and negative slice steps are not yet supported.
 """
@@ -26,7 +26,7 @@ class BrowserArrayBackend:
         self._request = request
 
     async def array_request(self, operation: str, **arguments):
-        if operation not in {'zarr_open', 'zarr_get'}:
+        if operation not in {'zarr_open', 'zarr_get', 'zarr_members'}:
             raise ValueError(f'Unknown array operation: {operation}')
         return await self._request(operation, message_type='zarr_request', **arguments)
 
@@ -86,6 +86,23 @@ class AsyncGroup:
         self.path = path
         self.attrs = dict(metadata['attrs'])
 
+    async def keys(self):
+        """Yield immediate child names without opening them."""
+        names, _ = await self._backend.array_request('zarr_members', path=self.path)
+        for name in names:
+            yield name
+
+    async def members(self):
+        """Yield immediate child names and their opened arrays or groups."""
+        async for name in self.keys():
+            yield name, await self.getitem(name)
+
+    async def arrays(self):
+        """Yield immediate array children, without reading their data."""
+        async for name, node in self.members():
+            if isinstance(node, AsyncArray):
+                yield name, node
+
     async def getitem(self, key: str):
         """Open a child array or group, including nested paths."""
         if not isinstance(key, str):
@@ -95,16 +112,19 @@ class AsyncGroup:
 
 
 class AsyncArray:
-    """Numeric array metadata and async basic indexing, executed by Zarrita."""
+    """Array metadata and async basic indexing, executed by Zarrita."""
 
     def __init__(self, store, backend, path, metadata):
         self.store = store
         self._backend = backend
         self.path = path
         self.attrs = dict(metadata['attrs'])
+        dims = metadata.get('dimension_names')
+        self.dimension_names = None if dims is None else tuple(dims)
         self.shape = tuple(metadata['shape'])
         self.chunks = tuple(metadata['chunks'])
-        self.dtype = np.dtype(metadata['dtype'])
+        self._string = metadata['dtype'] == 'string'
+        self.dtype = np.dtype(object if self._string else metadata['dtype'])
         self.ndim = len(self.shape)
         self.size = math.prod(self.shape)
 
@@ -114,6 +134,14 @@ class AsyncArray:
         result, buffers = await self._backend.array_request(
             'zarr_get', path=self.path, selection=selection,
         )
+        if self._string:
+            values = result.get('values')
+            if (tuple(result['shape']) != expected_shape or result['dtype'] != 'string'
+                    or not isinstance(values, list) or len(values) != math.prod(expected_shape)
+                    or not all(isinstance(value, str) for value in values)):
+                raise RuntimeError('Browser returned invalid string array data')
+            data = np.asarray(values, dtype=object).reshape(expected_shape)
+            return data[()] if expected_shape == () else data
         if tuple(result['shape']) != expected_shape or np.dtype(result['dtype']) != self.dtype:
             raise RuntimeError('Browser returned inconsistent array metadata')
         if len(buffers) != 1 or len(result['strides']) != len(expected_shape):
@@ -160,5 +188,5 @@ async def open_group(store, *, mode='r', path=None) -> AsyncGroup:
 
 
 async def open_array(store, *, mode='r', path=None) -> AsyncArray:
-    """Open an existing numeric array at path without fetching its chunk data."""
+    """Open an existing array at path without fetching its chunk data."""
     return await _open(store, path, mode, 'array')

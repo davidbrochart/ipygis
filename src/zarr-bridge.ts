@@ -27,40 +27,50 @@ export class ZarrBridge {
   }
 
   private async handle(message: ArrayRequest) {
-    if (message.type !== 'zarr_request' || this.closed) return;
+    if (message.type !== 'zarr_request' || this.closed) {
+      return;
+    }
     try {
       const store = this.getStore(message.store_id);
-      const { openNode, readArray } = await import('./zarr.js');
+      const { openNode, readArray, listMembers } = await import('./zarr.js');
       if (message.operation === 'zarr_open') {
         const result = await openNode(store, message.path);
-        if (!this.closed)
+        if (!this.closed) {
           this.model.send({
             type: 'zarr_response',
             id: message.id,
             result: JSON.parse(JSON.stringify(result)),
           });
+        }
+      } else if (message.operation === 'zarr_members') {
+        const result = await listMembers(store, message.path);
+        if (!this.closed) {
+          this.model.send({ type: 'zarr_response', id: message.id, result });
+        }
       } else if (message.operation === 'zarr_get') {
         const { result, data } = await readArray(
           store,
           message.path,
           message.selection,
         );
-        if (!this.closed)
+        if (!this.closed) {
           this.model.send(
             { type: 'zarr_response', id: message.id, result },
             undefined,
             [data.buffer],
           );
+        }
       } else {
         throw new Error('Unknown Zarr request operation');
       }
     } catch (error) {
-      if (!this.closed)
+      if (!this.closed) {
         this.model.send({
           type: 'zarr_response',
           id: message.id,
           error: error instanceof Error ? error.message : String(error),
         });
+      }
     }
   }
 }

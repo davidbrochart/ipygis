@@ -16,6 +16,8 @@ class Backend:
         if self.closed:
             raise RuntimeError('Session store is closed')
         self.calls.append((operation, args))
+        if operation == 'zarr_members':
+            return ['a'], []
         if operation == 'zarr_open':
             if not args['path']:
                 return {'kind': 'group', 'attrs': {'title': 'test'}}, []
@@ -108,6 +110,10 @@ async def test_array_transport_is_independent_of_byte_backend():
     array = await zarr.open_array(store, path='a')
     assert await array.getitem((1, 2)) == 8
     assert messages == ['zarr_request', 'zarr_request']
+    group = await zarr.open_group(store)
+    assert [name async for name in group.keys()] == ['a']
+    assert [(name, array.path) async for name, array in group.arrays()] == [('a', 'a')]
+    assert all(message == 'zarr_request' for message in messages)
     backend.closed = True
     with pytest.raises(RuntimeError, match='closed'):
         await array.getitem((0, 0))
