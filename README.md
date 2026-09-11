@@ -61,12 +61,46 @@ You can also use `await zarr.open_array(session.store, path="0", mode="r")`.
 Reads support integers (including negative indices), ellipses, and positive-step
 slices. Integer and floating-point dtypes from 8-bit integers through 64-bit
 integers/floats are supported; 64-bit integers are transferred as binary data.
-Point selections return NumPy scalars; other selections return NumPy arrays.
+Zarr v3 variable-length strings are returned as NumPy object arrays (or Python
+strings for point selections). Numeric point selections return NumPy scalars;
+other numeric selections return NumPy arrays.
 Metadata attributes are local snapshots, not a write API. Writing, fancy/boolean
-indexing, new axes, negative slice steps, and nonnumeric dtypes are unsupported.
+indexing, new axes, negative slice steps, and other nonnumeric dtypes are unsupported.
 TIFF LZW decoding is registered in JavaScript automatically. Other codecs must be
 supported by Zarrita; this API does not apply xarray's CF decoding or geospatial
 coordinate selection. Close the session after finishing all reads.
 
 The existing `session.store` remains usable with Zarr-Python. The new array API
 uses its browser backend directly; Python does not fetch or decode the chunks.
+
+## Asynchronous xarray reads
+
+Use ipygis's async opener to construct an xarray dataset from the same store:
+
+```python
+from ipygis.xarray import open_zarr_async
+
+ds = await open_zarr_async(session.store)
+region = await ds.isel(y=slice(100, 200), x=slice(200, 300)).load_async()
+# If the dataset contains x and y coordinate arrays:
+point = await ds.sel(x=10.5, y=48.5, method="nearest").load_async()
+```
+
+Use your dataset's dimension names in place of `x` and `y`. Dimensions must be
+stored in Zarr v3 `dimension_names` or Zarr v2 `_ARRAY_DIMENSIONS` attributes.
+Coordinate arrays must already exist; the opener does not derive them from TIFF
+georeferencing.
+
+This uses Zarrita for array reads, without calling `xarray.open_zarr()` or
+Zarr-Python's synchronous API. Raster data stays lazy until `load_async()`;
+synchronous operations such as accessing unloaded `.values` raise an error.
+Coordinate arrays for dimension indexes are read asynchronously while opening
+so that `.sel()` can work. Pass `create_default_indexes=False` to skip those
+reads and use `.isel()` instead.
+
+CF masks and scale factors are decoded lazily. CF datetime arrays are currently
+loaded asynchronously before decoding because xarray's datetime decoder probes
+values synchronously; use `decode_times=False` to leave those arrays lazy.
+The browser API supports numeric arrays and Zarr v3 strings. Advanced indexing may read a larger
+bounding region before selecting the requested values in Python. Keep the
+session open until all reads finish; closing the dataset does not close it.
