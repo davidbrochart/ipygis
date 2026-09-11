@@ -2,18 +2,21 @@ import anyio
 import numpy as np
 import pytest
 import xarray as xr
+from test_xarray import Transport
+from test_xarray import forbid_sync as forbid_sync  # Reuse the no-thread/no-sync guard.
 
-from ipygis.xarray import mosaic_async
-from test_xarray import Transport, forbid_sync  # Reuse the no-thread/no-sync guard.
-from ipygis.xarray import open_zarr_async
+from ipygis.xarray import mosaic_async, open_zarr_async
 
 pytestmark = pytest.mark.anyio
 
 
 async def source(top=3.5, left=0.5, base=0):
     transport = Transport()
-    transport.values = {'y': top - np.arange(3.), 'x': left + np.arange(4.),
-                        'elevation': base + np.arange(12.).reshape(3, 4)}
+    transport.values = {
+        'y': top - np.arange(3.0),
+        'x': left + np.arange(4.0),
+        'elevation': base + np.arange(12.0).reshape(3, 4),
+    }
     transport.requests = []
     original = transport.array_request
 
@@ -37,17 +40,27 @@ async def test_seams_gaps_and_selection():
     assert not ta.reads and not tb.reads and not tc.reads
     expected = np.full((6, 8), np.nan)
     expected[:3, :4], expected[:3, 4:], expected[3:, :4] = (
-        ta.values['elevation'], tb.values['elevation'], tc.values['elevation'])
-    for key in [dict(y=slice(1, 5), x=slice(2, 6)), dict(y=2, x=4),
-                dict(y=slice(None, None, 2), x=slice(None, None, 3)),
-                dict(y=slice(1, 1)), dict(y=[5, 0], x=[7, 1]),
-                dict(y=slice(None, None, -1), x=slice(None, None, -2))]:
+        ta.values['elevation'],
+        tb.values['elevation'],
+        tc.values['elevation'],
+    )
+    for key in [
+        dict(y=slice(1, 5), x=slice(2, 6)),
+        dict(y=2, x=4),
+        dict(y=slice(None, None, 2), x=slice(None, None, 3)),
+        dict(y=slice(1, 1)),
+        dict(y=[5, 0], x=[7, 1]),
+        dict(y=slice(None, None, -1), x=slice(None, None, -2)),
+    ]:
         result = await mosaic.isel(key).load_async()
-        np.testing.assert_equal(result.values, xr.DataArray(expected, dims=('y', 'x')).isel(key).values)
+        np.testing.assert_equal(
+            result.values, xr.DataArray(expected, dims=('y', 'x')).isel(key).values
+        )
     geographic = await mosaic.sel(y=slice(2.5, -0.5), x=slice(2.5, 5.5)).load_async()
     np.testing.assert_equal(geographic, expected[1:5, 2:6])
-    vector = await mosaic.isel(y=xr.DataArray([0, 4], dims='points'),
-                              x=xr.DataArray([5, 1], dims='points')).load_async()
+    vector = await mosaic.isel(
+        y=xr.DataArray([0, 4], dims='points'), x=xr.DataArray([5, 1], dims='points')
+    ).load_async()
     np.testing.assert_equal(vector.values, [expected[0, 5], expected[4, 1]])
     with pytest.raises(RuntimeError, match='load_async'):
         mosaic.values
@@ -69,16 +82,20 @@ async def test_reads_only_intersections_and_lifetime():
 
 async def test_validation_and_integer_fill():
     a, _ = await source()
-    for sources, match in [([], 'At least'), ([a, a], 'overlap'),
-                            ([a.isel(y=slice(None, None, -1))], 'ascending'),
-                            ([a.assign_coords(x=[0, 1, 2, 4])], 'regular'),
-                            ([a, a.assign_coords(x=a.x + 4.1)], 'aligned'),
-                            ([a, a.assign_coords(x=a.x * 2 + 5)], 'spacing'),
-                            ([a.assign_attrs(crs='other')], 'CRS')]:
+    for sources, match in [
+        ([], 'At least'),
+        ([a, a], 'overlap'),
+        ([a.isel(y=slice(None, None, -1))], 'ascending'),
+        ([a.assign_coords(x=[0, 1, 2, 4])], 'regular'),
+        ([a, a.assign_coords(x=a.x + 4.1)], 'aligned'),
+        ([a, a.assign_coords(x=a.x * 2 + 5)], 'spacing'),
+        ([a.assign_attrs(crs='other')], 'CRS'),
+    ]:
         with pytest.raises(ValueError, match=match):
             await mosaic_async(sources, crs='EPSG:4326')
-    integer = xr.DataArray(np.full((3, 4), 2**60 + 1, dtype='int64'),
-                           coords=a.coords, dims=a.dims)
+    integer = xr.DataArray(
+        np.full((3, 4), 2**60 + 1, dtype='int64'), coords=a.coords, dims=a.dims
+    )
     with pytest.raises(ValueError, match='fill_value'):
         await mosaic_async([integer], crs='EPSG:4326')
     result = await mosaic_async([integer], crs='EPSG:4326', fill_value=-1)
@@ -143,28 +160,50 @@ async def test_notebook_georeferencing():
 
     examples = Path(__file__).parents[1] / 'examples'
     build = json.loads((examples / 'build_time.ipynb').read_text())
-    cell = next(''.join(c['source']) for c in build['cells'] if 'def add_tile_coords' in ''.join(c['source']))
+    cell = next(
+        ''.join(c['source'])
+        for c in build['cells']
+        if 'def add_tile_coords' in ''.join(c['source'])
+    )
     tree = ast.parse(cell)
     definition = next(node for node in tree.body if isinstance(node, ast.FunctionDef))
     namespace = {'reference_grid': None}
-    exec(compile(ast.Module(body=[definition], type_ignores=[]), 'preprocess', 'exec'), namespace)
-    attrs = dict(model_tiepoint=[2, 3, 0, 11, 19.25, 0], model_pixel_scale=[.5, .25, 0],
-                 geographic_type=4326, raster_type=1)
-    tile = xr.Dataset({'0': xr.DataArray(np.arange(12.).reshape(3, 4), dims=('y','x'), attrs=attrs)})
+    exec(
+        compile(ast.Module(body=[definition], type_ignores=[]), 'preprocess', 'exec'),
+        namespace,
+    )
+    attrs = dict(
+        model_tiepoint=[2, 3, 0, 11, 19.25, 0],
+        model_pixel_scale=[0.5, 0.25, 0],
+        geographic_type=4326,
+        raster_type=1,
+    )
+    tile = xr.Dataset(
+        {'0': xr.DataArray(np.arange(12.0).reshape(3, 4), dims=('y', 'x'), attrs=attrs)}
+    )
     ds = namespace['add_tile_coords'](tile)
     assert ds.tile.values.tolist() == ['20_10']
     assert ds.tile_x.item() == 10 and ds.tile_y.item() == 20
     runtime = json.loads((examples / 'run_time.ipynb').read_text())
-    code = next(''.join(c['source']) for c in runtime['cells'] if 'mosaic = await mosaic_async' in ''.join(c['source']))
+    code = next(
+        ''.join(c['source'])
+        for c in runtime['cells']
+        if 'mosaic = await mosaic_async' in ''.join(c['source'])
+    )
     namespace.update(ds=ds, np=np, mosaic_async=mosaic_async)
-    await eval(compile(code, 'mosaic example', 'exec', flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT), namespace)
+    await eval(
+        compile(code, 'mosaic example', 'exec', flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT),
+        namespace,
+    )
     mosaic = namespace['mosaic']
     np.testing.assert_equal(mosaic.longitude.values, [10.25, 10.75, 11.25, 11.75])
     np.testing.assert_equal(mosaic.latitude.values, [19.875, 19.625, 19.375])
     assert (await mosaic.sel(latitude=19.625, longitude=11.25).load_async()).item() == 6
-    for changed, match in [({'geographic_type': 3857}, 'WGS84'),
-                           ({'raster_type': 2}, 'PixelIsArea'),
-                           ({'model_pixel_scale': [1, 1, 0]}, 'spacing')]:
+    for changed, match in [
+        ({'geographic_type': 3857}, 'WGS84'),
+        ({'raster_type': 2}, 'PixelIsArea'),
+        ({'model_pixel_scale': [1, 1, 0]}, 'spacing'),
+    ]:
         invalid = tile.copy()
         invalid['0'].attrs = attrs | changed
         with pytest.raises(ValueError, match=match):

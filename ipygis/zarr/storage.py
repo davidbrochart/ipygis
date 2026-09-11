@@ -1,13 +1,18 @@
 """Read-only Zarr v3 adapter for asynchronous byte-storage backends."""
+
 from __future__ import annotations
 
 import json
-import anyio
 from collections.abc import AsyncIterator, Iterable
 from typing import Protocol
 
+import anyio
 from zarr.abc.store import (
-    Store, ByteRequest, RangeByteRequest, OffsetByteRequest, SuffixByteRequest,
+    ByteRequest,
+    OffsetByteRequest,
+    RangeByteRequest,
+    Store,
+    SuffixByteRequest,
 )
 from zarr.core.buffer import Buffer, BufferPrototype
 
@@ -17,6 +22,7 @@ class StorageBackend(Protocol):
 
     The backend handles its transport, concurrency, and event-loop requirements.
     """
+
     async def get(self, key: str, byte_range: dict | None = None) -> bytes | None: ...
     async def exists(self, key: str) -> bool: ...
     async def list(self) -> list[str]: ...
@@ -32,13 +38,16 @@ class BrowserStore(Store):
     Chunk reads delegate to the supplied backend. Zarr resolves codecs from metadata.
     Closing the adapter closes its backend.
     """
+
     supports_writes = False
     supports_deletes = False
     supports_listing = True
     supports_consolidated_metadata = False
 
     @classmethod
-    async def open(cls, backend: StorageBackend, *, read_only=True, array_backend=None) -> BrowserStore:
+    async def open(
+        cls, backend: StorageBackend, *, read_only=True, array_backend=None
+    ) -> BrowserStore:
         """Prefetch Zarr v3 metadata from an already-open backend.
 
         On failure the backend remains owned by the caller. On success the
@@ -67,8 +76,14 @@ class BrowserStore(Store):
         await visit('')
         return cls(backend, metadata, directories, array_backend=array_backend)
 
-    def __init__(self, backend: StorageBackend, metadata: dict[str, bytes],
-                 directories: dict[str, list[str]], *, array_backend=None):
+    def __init__(
+        self,
+        backend: StorageBackend,
+        metadata: dict[str, bytes],
+        directories: dict[str, list[str]],
+        *,
+        array_backend=None,
+    ):
         super().__init__(read_only=True)
         self.backend = backend
         self.array_backend = array_backend
@@ -86,45 +101,77 @@ class BrowserStore(Store):
 
     @staticmethod
     def _metadata_key(key: str) -> bool:
-        return key.rsplit('/', 1)[-1] in {'zarr.json', '.zarray', '.zgroup', '.zattrs', '.zmetadata'}
+        return key.rsplit('/', 1)[-1] in {
+            'zarr.json',
+            '.zarray',
+            '.zgroup',
+            '.zattrs',
+            '.zmetadata',
+        }
 
     @staticmethod
     def _range(byte_range: ByteRequest | None) -> dict | None:
         if byte_range is None:
             return None
         if isinstance(byte_range, RangeByteRequest):
-            result = {'offset': byte_range.start, 'length': byte_range.end - byte_range.start}
+            result = {
+                'offset': byte_range.start,
+                'length': byte_range.end - byte_range.start,
+            }
         elif isinstance(byte_range, OffsetByteRequest):
             result = {'offset': byte_range.offset}
         elif isinstance(byte_range, SuffixByteRequest):
             result = {'suffixLength': byte_range.suffix}
         else:
             raise TypeError(f'Unsupported byte range: {byte_range!r}')
-        if any(not isinstance(value, int) or value < 0 or value > 2**53 - 1 for value in result.values()):
+        if any(
+            not isinstance(value, int) or value < 0 or value > 2**53 - 1
+            for value in result.values()
+        ):
             raise ValueError('Byte ranges must be nonnegative safe JavaScript integers')
         return result
 
     @staticmethod
     def _slice(data: bytes, byte_range: ByteRequest | None) -> bytes:
         if isinstance(byte_range, RangeByteRequest):
-            return data[byte_range.start:byte_range.end]
+            return data[byte_range.start : byte_range.end]
         if isinstance(byte_range, OffsetByteRequest):
-            return data[byte_range.offset:]
+            return data[byte_range.offset :]
         if isinstance(byte_range, SuffixByteRequest):
-            return data[-byte_range.suffix:] if byte_range.suffix else b''
+            return data[-byte_range.suffix :] if byte_range.suffix else b''
         return data
 
-    async def get(self, key: str, prototype: BufferPrototype, byte_range: ByteRequest | None = None) -> Buffer | None:
+    async def get(
+        self,
+        key: str,
+        prototype: BufferPrototype,
+        byte_range: ByteRequest | None = None,
+    ) -> Buffer | None:
         self._check_open()
         query = self._range(byte_range)
         if self._metadata_key(key):
             data = self._metadata.get(key)
-            return None if data is None else prototype.buffer.from_bytes(self._slice(data, byte_range))
+            return (
+                None
+                if data is None
+                else prototype.buffer.from_bytes(self._slice(data, byte_range))
+            )
         data = await self.backend.get(key, query)
         return None if data is None else prototype.buffer.from_bytes(data)
 
-    async def get_partial_values(self, prototype: BufferPrototype, key_ranges: Iterable[tuple[str, ByteRequest | None]]) -> list[Buffer | None]:
-        return list(await anyio.gather(*(self.get(key, prototype, byte_range) for key, byte_range in key_ranges)))
+    async def get_partial_values(
+        self,
+        prototype: BufferPrototype,
+        key_ranges: Iterable[tuple[str, ByteRequest | None]],
+    ) -> list[Buffer | None]:
+        return list(
+            await anyio.gather(
+                *(
+                    self.get(key, prototype, byte_range)
+                    for key, byte_range in key_ranges
+                )
+            )
+        )
 
     async def exists(self, key: str) -> bool:
         self._check_open()

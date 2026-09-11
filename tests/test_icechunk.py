@@ -1,18 +1,23 @@
 """Repository/session lifecycle tests with a fake browser transport."""
+
 import anyio
 import pytest
-
-from ipygis.icechunk import Repository
 from zarr.abc.store import Store
 from zarr.core.buffer import default_buffer_prototype
+
+from ipygis.icechunk import Repository
 
 
 class Connection:
     def __init__(self, data=None):
-        self.data = data if data is not None else {
-            "zarr.json": b'{"zarr_format":3,"node_type":"group","attributes":{}}',
-            "key": b"chunk",
-        }
+        self.data = (
+            data
+            if data is not None
+            else {
+                'zarr.json': b'{"zarr_format":3,"node_type":"group","attributes":{}}',
+                'key': b'chunk',
+            }
+        )
         self.calls = []
         self.next_session = 0
 
@@ -21,15 +26,23 @@ class Connection:
         self.calls.append((operation, arguments))
         if operation == 'readonly_session':
             self.next_session += 1
-            return {'store_id': f'session-{self.next_session}',
-                    'snapshot_id': arguments.get('snapshot_id', f'snapshot-{self.next_session}')}, []
+            return {
+                'store_id': f'session-{self.next_session}',
+                'snapshot_id': arguments.get(
+                    'snapshot_id', f'snapshot-{self.next_session}'
+                ),
+            }, []
         if operation == 'get':
             data = self.data.get(arguments['key'])
             return {'missing': data is None}, [] if data is None else [memoryview(data)]
         if operation == 'list_dir':
             prefix = arguments['prefix']
             prefix = prefix.rstrip('/') + '/' if prefix else ''
-            entries = {key[len(prefix):].split('/')[0] for key in self.data if key.startswith(prefix) and key != 'key'}
+            entries = {
+                key[len(prefix) :].split('/')[0]
+                for key in self.data
+                if key.startswith(prefix) and key != 'key'
+            }
             return sorted(entries), []
         if operation == 'close':
             return None, []
@@ -48,12 +61,20 @@ async def test_sessions_pin_independent_snapshots_and_close_independently():
     assert isinstance(first.store, Store)
     assert first.snapshot_id == 'snapshot-1'
     assert second.snapshot_id == 'previous'
-    assert connection.calls[0] == ('readonly_session', {'store_id': 'repo', 'branch': 'main'})
-    assert [call for call in connection.calls if call[0] == 'readonly_session'][1] == ('readonly_session', {'store_id': 'repo', 'snapshot_id': 'previous'})
+    assert connection.calls[0] == (
+        'readonly_session',
+        {'store_id': 'repo', 'branch': 'main'},
+    )
+    assert [call for call in connection.calls if call[0] == 'readonly_session'][1] == (
+        'readonly_session',
+        {'store_id': 'repo', 'snapshot_id': 'previous'},
+    )
     await first.aclose()
     with pytest.raises(RuntimeError, match='closed'):
         await first.store.get('key', default_buffer_prototype())
-    assert (await second.store.get('key', default_buffer_prototype())).to_bytes() == b'chunk'
+    assert (
+        await second.store.get('key', default_buffer_prototype())
+    ).to_bytes() == b'chunk'
     assert connection.calls[-1][1]['store_id'] == 'session-2'
     third = await repository.readonly_session_async()
     assert third.snapshot_id == 'snapshot-3'
@@ -79,6 +100,7 @@ async def test_session_selector_is_validated_before_sending():
 
 def test_jupyter_storage_is_configuration_only():
     from unittest.mock import patch
+
     from ipygis.icechunk import Storage, jupyter_storage
 
     with patch('ipygis.gis.GIS') as connection:
@@ -103,23 +125,33 @@ async def test_open_requires_storage_before_creating_connection():
 @pytest.mark.anyio
 async def test_session_store_opens_directly_in_xarray_with_optional_lzw():
     import json
-    import numpy as np
-    import xarray as xr
-    import zarr
-    from zarr.storage import MemoryStore
-    from ipygis.zarr.codecs import BrowserLzwCodec
-    from zarr.registry import register_codec
-    from ipygis.gis import _close_decoder_connections
     from types import SimpleNamespace
     from unittest.mock import patch
 
+    import numpy as np
+    import xarray as xr
+    import zarr
+    from zarr.registry import register_codec
+    from zarr.storage import MemoryStore
+
+    from ipygis.gis import _close_decoder_connections
+    from ipygis.zarr.codecs import BrowserLzwCodec
+
     memory = MemoryStore()
     group = await zarr.api.asynchronous.create_group(store=memory, zarr_format=3)
-    array = await group.create_array('data', shape=(2,), chunks=(2,), dtype='float64',
-                                     dimension_names=('x',), compressors=[])
-    await array.setitem(slice(None), np.array([7., 8.]))
-    data = {key: (await memory.get(key, default_buffer_prototype())).to_bytes()
-            async for key in memory.list()}
+    array = await group.create_array(
+        'data',
+        shape=(2,),
+        chunks=(2,),
+        dtype='float64',
+        dimension_names=('x',),
+        compressors=[],
+    )
+    await array.setitem(slice(None), np.array([7.0, 8.0]))
+    data = {
+        key: (await memory.get(key, default_buffer_prototype())).to_bytes()
+        async for key in memory.list()
+    }
     metadata = json.loads(data['data/zarr.json'])
     metadata['codecs'].append({'name': 'imagecodecs_lzw'})
     data['data/zarr.json'] = json.dumps(metadata).encode()
@@ -135,15 +167,25 @@ async def test_session_store_opens_directly_in_xarray_with_optional_lzw():
     register_codec('imagecodecs_lzw', BrowserLzwCodec)
     browser = SimpleNamespace(decode_lzw=decode, _widget=SimpleNamespace(comm=object()))
     browser._widget.close = lambda: setattr(browser._widget, 'comm', None)
-    assert all(args['key'].endswith('zarr.json') for op, args in connection.calls if op == 'get')
+    assert all(
+        args['key'].endswith('zarr.json')
+        for op, args in connection.calls
+        if op == 'get'
+    )
     connection.calls.clear()
-    with patch('ipygis.gis.GIS', return_value=browser), \
-         zarr.config.set({'codecs.imagecodecs_lzw': 'ipygis.zarr.codecs.BrowserLzwCodec'}):
-        ds = xr.open_zarr(session.store, chunks=None, consolidated=False, create_default_indexes=False)
+    with (
+        patch('ipygis.gis.GIS', return_value=browser),
+        zarr.config.set(
+            {'codecs.imagecodecs_lzw': 'ipygis.zarr.codecs.BrowserLzwCodec'}
+        ),
+    ):
+        ds = xr.open_zarr(
+            session.store, chunks=None, consolidated=False, create_default_indexes=False
+        )
         assert connection.calls == []
         assert decoded == []
         result = await ds.data.isel(x=0).load_async()
-        assert result.item() == 7.
+        assert result.item() == 7.0
         assert decoded == [(data['data/c/0'], 16)]
     await repository.aclose()
     assert session.store._closed
@@ -168,6 +210,7 @@ async def test_failed_metadata_prefetch_releases_session():
 async def test_backend_is_forwarded_when_opening_repository(backend):
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
+
     from ipygis.icechunk import jupyter_storage
 
     ready = anyio.Event()
@@ -177,7 +220,9 @@ async def test_backend_is_forwarded_when_opening_repository(backend):
         _request=AsyncMock(return_value=({'repository_id': 'repo'}, [])),
     )
     repository = await Repository.open_async(
-        jupyter_storage('example.icechunk'), gis=connection, backend=backend,
+        jupyter_storage('example.icechunk'),
+        gis=connection,
+        backend=backend,
     )
     assert connection._request.call_args.kwargs['backend'] == backend
     await repository.aclose()
@@ -186,11 +231,14 @@ async def test_backend_is_forwarded_when_opening_repository(backend):
 @pytest.mark.anyio
 async def test_invalid_backend_fails_before_creating_widget():
     from unittest.mock import patch
+
     from ipygis.icechunk import jupyter_storage
 
     with patch('ipygis.gis.GIS') as connection:
         with pytest.raises(ValueError, match='backend'):
-            await Repository.open_async(jupyter_storage('example.icechunk'), backend='unknown')
+            await Repository.open_async(
+                jupyter_storage('example.icechunk'), backend='unknown'
+            )
         connection.assert_not_called()
 
 
@@ -210,9 +258,14 @@ async def test_session_composes_independent_array_transport():
     session = await repository.readonly_session_async()
     group = await zarr.open_group(session.store)
     assert group.store is session.store
-    assert connection.calls[-1] == ('zarr_open', {
-        'store_id': 'session-1', 'message_type': 'zarr_request', 'path': '',
-    })
+    assert connection.calls[-1] == (
+        'zarr_open',
+        {
+            'store_id': 'session-1',
+            'message_type': 'zarr_request',
+            'path': '',
+        },
+    )
     await session.aclose()
     with pytest.raises(RuntimeError, match='closed'):
         await group.getitem('child')

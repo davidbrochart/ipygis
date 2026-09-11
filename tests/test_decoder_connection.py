@@ -1,11 +1,12 @@
 """Lifecycle of the decoder connection, independent of repositories."""
+
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import anyio
 import pytest
 
-from ipygis.gis import _get_decoder_connection, _decode_lzw, _close_decoder_connections
+from ipygis.gis import _close_decoder_connections, _decode_lzw, _get_decoder_connection
 
 
 def connection():

@@ -1,19 +1,19 @@
 """Offline tests: no Jupyter server, proxy, or remote raster required."""
-import pytest
+
 from unittest.mock import patch
 
 import anyio
-
 import numpy as np
+import pytest
 import xarray as xr
 import zarr
-from zarr.abc.store import RangeByteRequest, OffsetByteRequest, SuffixByteRequest
+from zarr.abc.store import OffsetByteRequest, RangeByteRequest, SuffixByteRequest
 from zarr.core.buffer import default_buffer_prototype
 from zarr.storage import MemoryStore
 
-from ipygis.zarr.storage import BrowserStore
-from ipygis.icechunk import Repository, _IcechunkBackend, jupyter_storage
 from ipygis.gis import GIS, GISWidget
+from ipygis.icechunk import Repository, _IcechunkBackend, jupyter_storage
+from ipygis.zarr.storage import BrowserStore
 
 
 class FakeBrowser:
@@ -33,10 +33,16 @@ class FakeBrowser:
             query = kwargs.get('range')
             if data is not None and query:
                 if 'suffixLength' in query:
-                    data = data[-query['suffixLength']:] if query['suffixLength'] else b''
+                    data = (
+                        data[-query['suffixLength'] :] if query['suffixLength'] else b''
+                    )
                 else:
                     start = query.get('offset', 0)
-                    data = data[start:start + query['length']] if 'length' in query else data[start:]
+                    data = (
+                        data[start : start + query['length']]
+                        if 'length' in query
+                        else data[start:]
+                    )
             return {'missing': data is None}, [] if data is None else [memoryview(data)]
         if operation == 'list':
             return list(self.data), []
@@ -44,7 +50,13 @@ class FakeBrowser:
             return [k for k in self.data if k.startswith(kwargs['prefix'])], []
         if operation == 'list_dir':
             prefix = kwargs['prefix'].rstrip('/') + '/'
-            return sorted({k[len(prefix):].split('/')[0] for k in self.data if k.startswith(prefix)}), []
+            return sorted(
+                {
+                    k[len(prefix) :].split('/')[0]
+                    for k in self.data
+                    if k.startswith(prefix)
+                }
+            ), []
         raise AssertionError(operation)
 
     def _notify_close(self, store_id):
@@ -53,6 +65,7 @@ class FakeBrowser:
 
 class MemoryBackend:
     """Byte backend without Icechunk, widget messages, or codec support."""
+
     def __init__(self, data):
         self.data = data
         self.calls = []
@@ -82,7 +95,13 @@ class MemoryBackend:
 
     async def list_dir(self, prefix):
         prefix = prefix.rstrip('/') + '/' if prefix else ''
-        return sorted({key[len(prefix):].split('/')[0] for key in self.data if key.startswith(prefix)})
+        return sorted(
+            {
+                key[len(prefix) :].split('/')[0]
+                for key in self.data
+                if key.startswith(prefix)
+            }
+        )
 
     def close(self):
         self.closed = True
@@ -97,9 +116,19 @@ class TestBrowserStore:
     async def setup_store(self):
         memory = MemoryStore()
         group = await zarr.api.asynchronous.create_group(store=memory, zarr_format=3)
-        array = await group.create_array('temperature', shape=(4,), chunks=(2,), dtype='float64', dimension_names=('x',), compressors=[])
-        await array.setitem(slice(None), np.array([1., 2., 7., 8.]))
-        self.data = {key: (await memory.get(key, default_buffer_prototype())).to_bytes() async for key in memory.list()}
+        array = await group.create_array(
+            'temperature',
+            shape=(4,),
+            chunks=(2,),
+            dtype='float64',
+            dimension_names=('x',),
+            compressors=[],
+        )
+        await array.setitem(slice(None), np.array([1.0, 2.0, 7.0, 8.0]))
+        self.data = {
+            key: (await memory.get(key, default_buffer_prototype())).to_bytes()
+            async for key in memory.list()
+        }
         self.browser = MemoryBackend(self.data)
         self.store = await BrowserStore.open(self.browser)
         assert all(args['key'].endswith('zarr.json') for _, args in self.browser.calls)
@@ -111,21 +140,31 @@ class TestBrowserStore:
             await self.store.aclose()
 
     async def test_xarray_open_uses_only_metadata_then_async_loads_one_chunk(self):
-        ds = xr.open_zarr(self.store, chunks=None, consolidated=False, create_default_indexes=False)
+        ds = xr.open_zarr(
+            self.store, chunks=None, consolidated=False, create_default_indexes=False
+        )
         assert self.browser.calls == []
         assert ds.sizes == {'x': 4}
         selected = await ds.temperature.isel(x=2).load_async()
-        assert selected.item() == 7.
-        reads = [args['key'] for operation, args in self.browser.calls if operation == 'get']
+        assert selected.item() == 7.0
+        reads = [
+            args['key'] for operation, args in self.browser.calls if operation == 'get'
+        ]
         assert reads == ['temperature/c/1']
 
     async def test_ranges_missing_and_concurrent_reads(self):
         prototype = default_buffer_prototype()
         key = 'temperature/c/0'
-        for query in [RangeByteRequest(2, 8), OffsetByteRequest(3), SuffixByteRequest(4)]:
+        for query in [
+            RangeByteRequest(2, 8),
+            OffsetByteRequest(3),
+            SuffixByteRequest(4),
+        ]:
             actual = await self.store.get(key, prototype, query)
             assert actual.to_bytes() == self.store._slice(self.data[key], query)
-        values = await self.store.get_partial_values(prototype, [(key, None), ('temperature/c/99', None)])
+        values = await self.store.get_partial_values(
+            prototype, [(key, None), ('temperature/c/99', None)]
+        )
         assert values[0].to_bytes() == self.data[key]
         assert values[1] is None
         assert await self.store.get('missing/zarr.json', prototype) is None
@@ -136,13 +175,20 @@ class TestBrowserStore:
         transport = FakeBrowser(self.data)
         repository = Repository(transport, 'repository')
         backend = _IcechunkBackend(repository, 'fixture')
-        self.store = BrowserStore(backend, self.store._metadata, self.store._directories)
-        ds = xr.open_zarr(self.store, chunks=None, consolidated=False, create_default_indexes=False)
+        self.store = BrowserStore(
+            backend, self.store._metadata, self.store._directories
+        )
+        ds = xr.open_zarr(
+            self.store, chunks=None, consolidated=False, create_default_indexes=False
+        )
         with pytest.raises(RuntimeError, match='notebook event loop'):
             ds.temperature.isel(x=2).load()
 
     async def test_listing_read_only_and_close(self):
-        assert set([key async for key in self.store.list_dir('')]) == {'zarr.json', 'temperature'}
+        assert set([key async for key in self.store.list_dir('')]) == {
+            'zarr.json',
+            'temperature',
+        }
         assert self.browser.calls == []
         assert set([key async for key in self.store.list()]) == set(self.data)
         assert await self.store.exists('temperature/c/0')
@@ -150,14 +196,18 @@ class TestBrowserStore:
         with pytest.raises(ValueError):
             await self.store.delete('zarr.json')
         with pytest.raises(ValueError):
-            await self.store.set('zarr.json', default_buffer_prototype().buffer.from_bytes(b''))
+            await self.store.set(
+                'zarr.json', default_buffer_prototype().buffer.from_bytes(b'')
+            )
         await self.store.aclose()
         with pytest.raises(RuntimeError, match='closed'):
             await self.store.get('zarr.json', default_buffer_prototype())
 
     @pytest.mark.parametrize('shared_connection', [False, True])
     @pytest.mark.parametrize('ready_before_open', [False, True])
-    async def test_open_waits_for_frontend_ready_message(self, ready_before_open, shared_connection):
+    async def test_open_waits_for_frontend_ready_message(
+        self, ready_before_open, shared_connection
+    ):
         with patch('ipygis.gis.display'):
             gis = GIS()
         messages = []
@@ -165,9 +215,12 @@ class TestBrowserStore:
         result = []
 
         async def open_store():
-            result.append(await Repository.open_async(
-                jupyter_storage('example.icechunk'), gis=gis if shared_connection else None,
-            ))
+            result.append(
+                await Repository.open_async(
+                    jupyter_storage('example.icechunk'),
+                    gis=gis if shared_connection else None,
+                )
+            )
 
         try:
             if ready_before_open:
@@ -184,10 +237,15 @@ class TestBrowserStore:
                     assert messages[0]['operation'] == 'open'
                     assert messages[0]['repository'] == 'example.icechunk'
                     gis._on_response(None, {'type': 'icechunk_ready'}, [])
-                    gis._on_response(None, {
-                        'type': 'icechunk_response', 'id': messages[0]['id'],
-                        'result': {'repository_id': 'opened'},
-                    }, [])
+                    gis._on_response(
+                        None,
+                        {
+                            'type': 'icechunk_response',
+                            'id': messages[0]['id'],
+                            'result': {'repository_id': 'opened'},
+                        },
+                        [],
+                    )
             assert len(result) == 1
             assert isinstance(result[0], Repository)
             assert not hasattr(result[0], 'snapshot_id')
@@ -217,7 +275,9 @@ class TestBrowserStore:
         gis._widget = GISWidget()
         gis._pending = {}
         messages = []
-        gis._widget.send = lambda content, buffers=None: messages.append((content, buffers))
+        gis._widget.send = lambda content, buffers=None: messages.append(
+            (content, buffers)
+        )
         results = []
 
         async def decode():
@@ -231,9 +291,15 @@ class TestBrowserStore:
                 assert message['operation'] == 'decode_lzw'
                 assert 'store_id' not in message
                 assert bytes(buffers[0]) == b'compressed'
-                gis._on_response(None, {
-                    'type': 'icechunk_response', 'id': message['id'], 'result': None,
-                }, [memoryview(b'AB')])
+                gis._on_response(
+                    None,
+                    {
+                        'type': 'icechunk_response',
+                        'id': message['id'],
+                        'result': None,
+                    },
+                    [memoryview(b'AB')],
+                )
             assert results == [b'AB']
         finally:
             gis._widget.close()
@@ -249,9 +315,13 @@ class TestBrowserStore:
             gis = GIS()
         fail_after = anyio.fail_after
         try:
-            with patch('ipygis.gis.GIS', return_value=gis), \
-                 patch.object(gis._widget, 'close') as close_widget, \
-                 patch('ipygis.icechunk.anyio.fail_after', lambda seconds: fail_after(0)):
+            with (
+                patch('ipygis.gis.GIS', return_value=gis),
+                patch.object(gis._widget, 'close') as close_widget,
+                patch(
+                    'ipygis.icechunk.anyio.fail_after', lambda seconds: fail_after(0)
+                ),
+            ):
                 with pytest.raises(TimeoutError):
                     await Repository.open_async(jupyter_storage('example.icechunk'))
                 close_widget.assert_called_once()
@@ -272,9 +342,15 @@ class TestBrowserStore:
             assert gis._pending == {}
             assert messages[-1]['operation'] == 'close'
             assert messages[-1]['store_id'] == messages[0]['id']
-            gis._on_response(None, {
-                'type': 'icechunk_response', 'id': messages[0]['id'], 'result': {},
-            }, [])
+            gis._on_response(
+                None,
+                {
+                    'type': 'icechunk_response',
+                    'id': messages[0]['id'],
+                    'result': {},
+                },
+                [],
+            )
             assert gis._pending == {}
         finally:
             gis._widget.close()
@@ -296,7 +372,15 @@ class TestBrowserStore:
                 tg.start_soon(read, 'second')
                 await anyio.wait_all_tasks_blocked()
                 for message in reversed(messages):
-                    gis._on_response(None, {'type': 'icechunk_response', 'id': message['id'], 'result': message['key']}, [memoryview(b'abc')])
+                    gis._on_response(
+                        None,
+                        {
+                            'type': 'icechunk_response',
+                            'id': message['id'],
+                            'result': message['key'],
+                        },
+                        [memoryview(b'abc')],
+                    )
             assert results['first'][0] == 'first'
             assert results['second'][0] == 'second'
 
@@ -307,7 +391,15 @@ class TestBrowserStore:
             async with anyio.create_task_group() as tg:
                 tg.start_soon(failed_read)
                 await anyio.wait_all_tasks_blocked()
-                gis._on_response(None, {'type': 'icechunk_response', 'id': messages[-1]['id'], 'error': 'bad checksum'}, [])
+                gis._on_response(
+                    None,
+                    {
+                        'type': 'icechunk_response',
+                        'id': messages[-1]['id'],
+                        'error': 'bad checksum',
+                    },
+                    [],
+                )
 
             async def open_until_cancelled(*, task_status=anyio.TASK_STATUS_IGNORED):
                 with anyio.CancelScope() as scope:

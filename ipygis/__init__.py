@@ -17,8 +17,8 @@ def _jupyter_labextension_paths():
     """
     return [
         {
-            "src": "labextension",
-            "dest": "ipygis",
+            'src': 'labextension',
+            'dest': 'ipygis',
         }
     ]
 
@@ -41,9 +41,9 @@ def _jupyter_nbextension_paths():
     """
     return [
         {
-            "section": "notebook",
-            "src": "nbextension",
-            "dest": "ipygis",
-            "require": "ipygis/extension",
+            'section': 'notebook',
+            'src': 'nbextension',
+            'dest': 'ipygis',
+            'require': 'ipygis/extension',
         }
     ]

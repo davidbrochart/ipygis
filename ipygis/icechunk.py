@@ -1,9 +1,11 @@
 """Browser access to Icechunk repositories and read-only sessions."""
+
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Literal
 from weakref import WeakValueDictionary
+
 import anyio
 from anyio.lowlevel import current_token
 
@@ -38,17 +40,23 @@ class Repository:
     """An open Icechunk repository. Create sessions to select snapshots."""
 
     @classmethod
-    async def open_async(cls, storage: Storage, *, proxy_url="", virtual_chunk_prefixes=None,
-                   gis: GIS | None = None,
-                   backend: Literal["icechunk-js", "@earthmover/icechunk"] = "icechunk-js") -> Repository:
+    async def open_async(
+        cls,
+        storage: Storage,
+        *,
+        proxy_url='',
+        virtual_chunk_prefixes=None,
+        gis: GIS | None = None,
+        backend: Literal['icechunk-js', '@earthmover/icechunk'] = 'icechunk-js',
+    ) -> Repository:
         """Open an existing repository with the selected browser implementation.
 
         ``icechunk-js`` (default) runs without shared memory.
         ``@earthmover/icechunk`` uses WASM and requires COOP/COEP headers.
         The choice applies to this repository and all sessions created from it.
         """
-        if backend not in ("icechunk-js", "@earthmover/icechunk"):
-            raise ValueError(f"Unknown Icechunk backend: {backend}")
+        if backend not in ('icechunk-js', '@earthmover/icechunk'):
+            raise ValueError(f'Unknown Icechunk backend: {backend}')
         if not isinstance(storage, Storage):
             raise TypeError('storage must be a Storage; use jupyter_storage(path)')
         from .gis import GIS
@@ -60,7 +68,10 @@ class Repository:
             with anyio.fail_after(30):
                 await gis._ready.wait()
             result, _ = await gis._request(
-                'open', repository=storage.path, proxy_url=proxy_url, backend=backend,
+                'open',
+                repository=storage.path,
+                proxy_url=proxy_url,
+                backend=backend,
                 virtual_chunk_prefixes=list(virtual_chunk_prefixes or []),
             )
             try:
@@ -96,29 +107,37 @@ class Repository:
             )
         async with self._requests:
             return await self.connection._request(
-                operation, store_id=resource_id or self._repository_id, **arguments,
+                operation,
+                store_id=resource_id or self._repository_id,
+                **arguments,
             )
 
-    async def readonly_session_async(self, branch: str | None = None, *,
-                               snapshot_id: str | None = None) -> Session:
+    async def readonly_session_async(
+        self, branch: str | None = None, *, snapshot_id: str | None = None
+    ) -> Session:
         """Pin a snapshot and prepare its Zarr store, fetching metadata only.
 
         ``session.store`` can be passed directly to Zarr or xarray. Configure
         browser codecs separately through ``ipygis.zarr.codecs``.
         """
-        from .zarr.storage import BrowserStore
         from .zarr.asynchronous import BrowserArrayBackend
+        from .zarr.storage import BrowserStore
 
         if branch is not None and snapshot_id is not None:
             raise ValueError('Specify either branch or snapshot_id')
-        selector = {'snapshot_id': snapshot_id} if snapshot_id is not None else {'branch': branch or 'main'}
+        selector = (
+            {'snapshot_id': snapshot_id}
+            if snapshot_id is not None
+            else {'branch': branch or 'main'}
+        )
         result, _ = await self._request('readonly_session', **selector)
         backend = _IcechunkBackend(self, result['store_id'])
         store = None
         try:
             self._check_open()
             store = await BrowserStore.open(
-                backend, array_backend=BrowserArrayBackend(backend._remote),
+                backend,
+                array_backend=BrowserArrayBackend(backend._remote),
             )
             self._check_open()
             self._stores[result['store_id']] = store
@@ -198,7 +217,9 @@ class _IcechunkBackend:
     async def _remote(self, operation: str, **arguments):
         self._check_open()
         return await self._repository._request(
-            operation, resource_id=self._store_id, **arguments,
+            operation,
+            resource_id=self._store_id,
+            **arguments,
         )
 
     async def get(self, key: str, byte_range: dict | None = None) -> bytes | None:

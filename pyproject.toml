@@ -46,7 +46,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest", "ruff"]
 
 [project.urls]
 Homepage = "https://github.com/davidbrochart/ipygis"
@@ -90,6 +90,12 @@ dependencies = [
 path = "."
 build_cmd = "build:prod"
 npm = ["jlpm"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.format]
+quote-style = "single"
 
 [[tool.mypy.overrides]]
 module = [
