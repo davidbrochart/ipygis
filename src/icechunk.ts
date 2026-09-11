@@ -56,6 +56,12 @@ export class IcechunkBridge {
     model.on('msg:custom', this.handle, this);
   }
 
+  getStore(id: string) {
+    const store = this.stores.get(id);
+    if (!store) throw new Error('Browser store is closed or missing');
+    return store;
+  }
+
   dispose() {
     this.closed = true;
     this.model.off('msg:custom', this.handle, this);

@@ -38,11 +38,13 @@ class BrowserStore(Store):
     supports_consolidated_metadata = False
 
     @classmethod
-    async def open(cls, backend: StorageBackend, *, read_only=True) -> BrowserStore:
+    async def open(cls, backend: StorageBackend, *, read_only=True, array_backend=None) -> BrowserStore:
         """Prefetch Zarr v3 metadata from an already-open backend.
 
         On failure the backend remains owned by the caller. On success the
-        returned store takes responsibility for closing it.
+        returned store takes responsibility for closing it. An optional
+        ``array_backend`` handles browser array reads independently of byte I/O;
+        its transport must enforce the same lifetime as the byte backend.
         """
         if not read_only:
             raise ValueError('BrowserStore only supports read-only access')
@@ -63,12 +65,13 @@ class BrowserStore(Store):
                         await visit(f'{path}/{entry}' if path else entry)
 
         await visit('')
-        return cls(backend, metadata, directories)
+        return cls(backend, metadata, directories, array_backend=array_backend)
 
     def __init__(self, backend: StorageBackend, metadata: dict[str, bytes],
-                 directories: dict[str, list[str]]):
+                 directories: dict[str, list[str]], *, array_backend=None):
         super().__init__(read_only=True)
         self.backend = backend
+        self.array_backend = array_backend
         self._metadata = dict(metadata)
         self._directories = {key: list(value) for key, value in directories.items()}
         self._closed = False

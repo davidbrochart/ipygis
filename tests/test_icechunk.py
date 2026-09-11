@@ -192,3 +192,28 @@ async def test_invalid_backend_fails_before_creating_widget():
         with pytest.raises(ValueError, match='backend'):
             await Repository.open_async(jupyter_storage('example.icechunk'), backend='unknown')
         connection.assert_not_called()
+
+
+@pytest.mark.anyio
+async def test_session_composes_independent_array_transport():
+    from ipygis.zarr import asynchronous as zarr
+
+    class ArrayConnection(Connection):
+        async def _request(self, operation, **arguments):
+            if operation == 'zarr_open':
+                self.calls.append((operation, arguments))
+                return {'kind': 'group', 'attrs': {}}, []
+            return await super()._request(operation, **arguments)
+
+    connection = ArrayConnection()
+    repository = Repository(connection, 'repo')
+    session = await repository.readonly_session_async()
+    group = await zarr.open_group(session.store)
+    assert group.store is session.store
+    assert connection.calls[-1] == ('zarr_open', {
+        'store_id': 'session-1', 'message_type': 'zarr_request', 'path': '',
+    })
+    await session.aclose()
+    with pytest.raises(RuntimeError, match='closed'):
+        await group.getitem('child')
+    repository.close()

@@ -35,7 +35,7 @@ class GIS:
         if content.get("type") == "icechunk_ready":
             self._ready.set()
             return
-        if content.get("type") != "icechunk_response":
+        if content.get("type") not in {"icechunk_response", "zarr_response"}:
             return
         future = self._pending.get(content.get("id"))
         if future is None or future.status is not anyio.Future.Status.PENDING:
@@ -49,12 +49,12 @@ class GIS:
         self._widget.send({"type": "icechunk_request", "id": uuid4().hex,
                            "operation": "close", "store_id": store_id})
 
-    async def _request(self, operation, *, buffers=None, **arguments):
+    async def _request(self, operation, *, buffers=None, message_type="icechunk_request", **arguments):
         request_id = uuid4().hex
         future = anyio.Future()
         self._pending[request_id] = future
         try:
-            self._widget.send({"type": "icechunk_request", "id": request_id,
+            self._widget.send({"type": message_type, "id": request_id,
                                "operation": operation, **arguments}, buffers=buffers or [])
             with anyio.fail_after(120):
                 await future.wait()

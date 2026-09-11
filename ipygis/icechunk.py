@@ -107,6 +107,7 @@ class Repository:
         browser codecs separately through ``ipygis.zarr.codecs``.
         """
         from .zarr.storage import BrowserStore
+        from .zarr.asynchronous import BrowserArrayBackend
 
         if branch is not None and snapshot_id is not None:
             raise ValueError('Specify either branch or snapshot_id')
@@ -116,7 +117,9 @@ class Repository:
         store = None
         try:
             self._check_open()
-            store = await BrowserStore.open(backend)
+            store = await BrowserStore.open(
+                backend, array_backend=BrowserArrayBackend(backend._remote),
+            )
             self._check_open()
             self._stores[result['store_id']] = store
             return Session(self, result['snapshot_id'], store)
