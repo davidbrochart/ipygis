@@ -2736,6 +2736,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@zarrita/storage@npm:^0.2.0":
+  version: 0.2.0
+  resolution: "@zarrita/storage@npm:0.2.0"
+  dependencies:
+    reference-spec-reader: ^0.2.0
+    unzipit: 2.0.0
+  checksum: 1bd26476efe4a1083e3fa7ae935b697d1d2d15812646e74fec00f4d95a0008d5b43323c285826e18d0a982b56ea98741c761c3ae343c5fa596274344b00f4d78
+  languageName: node
+  linkType: hard
+
 "abab@npm:^2.0.3, abab@npm:^2.0.6":
   version: 2.0.6
   resolution: "abab@npm:2.0.6"
@@ -4373,6 +4383,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"fflate@npm:^0.8.0":
+  version: 0.8.3
+  resolution: "fflate@npm:0.8.3"
+  checksum: a2a417e8fb5128b946cb397ab59a90e089057cba492f2c17a89c4af6ba8568b3da72ed36ef1efe901df7858a20964ce56e84d282e60498be1947fcc6133bc891
+  languageName: node
+  linkType: hard
+
 "file-entry-cache@npm:^6.0.1":
   version: 6.0.1
   resolution: "file-entry-cache@npm:6.0.1"
@@ -5060,6 +5077,7 @@ __metadata:
     typescript: ~5.3.3
     webpack: ^5.90.0
     webpack-cli: ^5.1.4
+    zarrita: ^0.7.5
   languageName: unknown
   linkType: soft
 
@@ -6649,6 +6667,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"numcodecs@npm:^0.3.2":
+  version: 0.3.2
+  resolution: "numcodecs@npm:0.3.2"
+  dependencies:
+    fflate: ^0.8.0
+  checksum: 8ce2fc4651cec0ecf738492d80d99870e5baad246b9de5e3c597ca1147954ad526fa131716f7c683a1a3c79ee60233cd9ca79df9ec4ac14f2f731c0bd964abc9
+  languageName: node
+  linkType: hard
+
 "nwsapi@npm:^2.2.2":
   version: 2.2.27
   resolution: "nwsapi@npm:2.2.27"
@@ -7146,6 +7173,13 @@ __metadata:
   dependencies:
     resolve: ^1.20.0
   checksum: ad3caed8afdefbc33fbc30e6d22b86c35b3d51c2005546f4e79bcc03c074df804b3640ad18945e6bef9ed12caedc035655ec1082f64a5e94c849ff939dc0a788
+  languageName: node
+  linkType: hard
+
+"reference-spec-reader@npm:^0.2.0":
+  version: 0.2.0
+  resolution: "reference-spec-reader@npm:0.2.0"
+  checksum: 4681767571504fda04edc86aa77ccbcca5a56744b2d0d6b767646209affd02dffbc973b7945f26a25a56d10c9751beca57e97afb05a6d54817bb9ba452364a33
   languageName: node
   linkType: hard
 
@@ -8365,6 +8399,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"unzipit@npm:2.0.0":
+  version: 2.0.0
+  resolution: "unzipit@npm:2.0.0"
+  checksum: f1ee48b5d94b283a0f3f8f9271362c0bd920ea9313559c53ced50cbeb1e5f94fc3a1d17023bcfa3d254e859f67ed9df7b28b7676f766b08005091c97abb0f822
+  languageName: node
+  linkType: hard
+
 "update-browserslist-db@npm:^1.3.0":
   version: 1.3.2
   resolution: "update-browserslist-db@npm:1.3.2"
@@ -8895,5 +8936,15 @@ __metadata:
   version: 0.1.0
   resolution: "yocto-queue@npm:0.1.0"
   checksum: f77b3d8d00310def622123df93d4ee654fc6a0096182af8bd60679ddcdfb3474c56c6c7190817c84a2785648cdee9d721c0154eb45698c62176c322fb46fc700
+  languageName: node
+  linkType: hard
+
+"zarrita@npm:^0.7.5":
+  version: 0.7.5
+  resolution: "zarrita@npm:0.7.5"
+  dependencies:
+    "@zarrita/storage": ^0.2.0
+    numcodecs: ^0.3.2
+  checksum: ecd04853ff8ba6d31feb1da82f5983189c4a06da51913e27eb228a7029b36341e46069a7f875220d82a1f69147f1a63e09b1afba0b684cf5dcbed52d5f095184
   languageName: node
   linkType: hard

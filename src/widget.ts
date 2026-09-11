@@ -6,6 +6,7 @@ import {
 
 import type { Contents } from '@jupyterlab/services';
 
+import { ZarrBridge } from './zarr-bridge';
 import { IcechunkBridge } from './icechunk';
 import { MODULE_NAME, MODULE_VERSION } from './version';
 
@@ -13,14 +14,17 @@ export class GISModel extends DOMWidgetModel {
   static contentsManager: Contents.IManager | undefined;
 
   private bridge!: IcechunkBridge;
+  private arrays!: ZarrBridge;
 
   initialize(...args: Parameters<DOMWidgetModel['initialize']>) {
     super.initialize(...args);
     this.bridge = new IcechunkBridge(this, GISModel.contentsManager);
+    this.arrays = new ZarrBridge(this, id => this.bridge.getStore(id));
     this.send({ type: 'icechunk_ready' }, this.callbacks());
   }
 
   async close(commClosed = false) {
+    this.arrays.dispose();
     this.bridge.dispose();
     await super.close(commClosed);
   }
