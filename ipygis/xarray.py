@@ -10,6 +10,7 @@ from xarray.backends.zarr import FillValueCoder
 from xarray.core import indexing
 
 from .zarr import asynchronous as zarr
+from ._mosaic import mosaic_async as mosaic_async
 
 
 class _BrowserArray(BackendArray):

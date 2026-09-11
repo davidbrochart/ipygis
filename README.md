@@ -104,3 +104,38 @@ values synchronously; use `decode_times=False` to leave those arrays lazy.
 The browser API supports numeric arrays and Zarr v3 strings. Advanced indexing may read a larger
 bounding region before selecting the requested values in Python. Keep the
 session open until all reads finish; closing the dataset does not close it.
+
+## Geographic mosaics
+
+`mosaic_async` combines georeferenced xarray DataArrays into one lazy array:
+
+```python
+from ipygis.xarray import mosaic_async
+
+mosaic = await mosaic_async(
+    sources, x="longitude", y="latitude", crs="EPSG:4326",
+)
+region = await mosaic.sel(
+    longitude=slice(-110, -109), latitude=slice(50, 49),
+).load_async()
+```
+
+Each source must be a numeric 2-D array with one-dimensional pixel-center
+coordinates, ascending in x and descending in y. Coordinates must have at least
+two values per axis, the same regular spacing, and aligned centers. Sources must
+share their dtype and CRS, and must not overlap. The `crs` argument declares their
+common CRS; source `crs` attributes, when present, must match it exactly. There is
+no reprojection or resampling. Chunk boundaries can differ between sources.
+
+Opening loads only coordinates. Reads fetch intersecting source slices and
+assemble the requested output in Python. Missing areas are filled with NaN;
+integer arrays require an explicit integer `fill_value` to preserve precision.
+The result supports xarray selection and `load_async()`; synchronous reads of
+unloaded values raise an error. Advanced indexing may fetch a larger bounding
+region. Keep all source stores open until reads finish.
+
+The HydroSHEDS notebooks retain the virtual tile collection in Icechunk and
+construct this mosaic at runtime from the tile origins and pixel spacing. A
+single stored virtual grid cannot join these TIFFs because their edges fall
+inside the mosaic's chunks. The mosaic reader handles those boundaries after
+Zarrita decodes the selected source chunks.
