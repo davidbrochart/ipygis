@@ -4,6 +4,7 @@ Supports fixed-width integer, floating-point, and Zarr v3 string arrays. Reads r
 arrays (or NumPy scalars for point selections). Writing, fancy indexing,
 new axes, and negative slice steps are not yet supported.
 """
+
 from __future__ import annotations
 
 import math
@@ -50,7 +51,7 @@ def _selection(selection, shape):
         count = len(shape) - len(keys) + 1
         if count < 0:
             raise IndexError('Too many indices')
-        keys = keys[:position] + (slice(None),) * count + keys[position + 1:]
+        keys = keys[:position] + (slice(None),) * count + keys[position + 1 :]
     if len(keys) > len(shape):
         raise IndexError('Too many indices')
     keys += (slice(None),) * (len(shape) - len(keys))
@@ -68,7 +69,9 @@ def _selection(selection, shape):
             try:
                 index = operator.index(key)
             except TypeError:
-                raise TypeError('Only integers, slices, and ellipses are supported') from None
+                raise TypeError(
+                    'Only integers, slices, and ellipses are supported'
+                ) from None
             if index < 0:
                 index += size
             if index < 0 or index >= size:
@@ -132,17 +135,26 @@ class AsyncArray:
         """Read integers/slices without a synchronous Zarr API or worker thread."""
         selection, expected_shape = _selection(selection, self.shape)
         result, buffers = await self._backend.array_request(
-            'zarr_get', path=self.path, selection=selection,
+            'zarr_get',
+            path=self.path,
+            selection=selection,
         )
         if self._string:
             values = result.get('values')
-            if (tuple(result['shape']) != expected_shape or result['dtype'] != 'string'
-                    or not isinstance(values, list) or len(values) != math.prod(expected_shape)
-                    or not all(isinstance(value, str) for value in values)):
+            if (
+                tuple(result['shape']) != expected_shape
+                or result['dtype'] != 'string'
+                or not isinstance(values, list)
+                or len(values) != math.prod(expected_shape)
+                or not all(isinstance(value, str) for value in values)
+            ):
                 raise RuntimeError('Browser returned invalid string array data')
             data = np.asarray(values, dtype=object).reshape(expected_shape)
             return data[()] if expected_shape == () else data
-        if tuple(result['shape']) != expected_shape or np.dtype(result['dtype']) != self.dtype:
+        if (
+            tuple(result['shape']) != expected_shape
+            or np.dtype(result['dtype']) != self.dtype
+        ):
             raise RuntimeError('Browser returned inconsistent array metadata')
         if len(buffers) != 1 or len(result['strides']) != len(expected_shape):
             raise RuntimeError('Browser returned an invalid array buffer')
@@ -153,7 +165,9 @@ class AsyncArray:
         if any(s < 0 for s in strides):
             raise RuntimeError('Browser returned invalid array strides')
         try:
-            data = np.ndarray(expected_shape, dtype=dtype, buffer=buffers[0], strides=strides)
+            data = np.ndarray(
+                expected_shape, dtype=dtype, buffer=buffers[0], strides=strides
+            )
         except (TypeError, ValueError) as error:
             raise RuntimeError('Browser returned an invalid array buffer') from error
         data = data.astype(self.dtype, order='C', copy=True)
@@ -166,7 +180,9 @@ async def _open(store, path, mode, kind):
     path = _path(path or '')
     backend = getattr(store, 'array_backend', store)
     if not callable(getattr(backend, 'array_request', None)):
-        raise TypeError('store must provide a browser array backend (e.g. session.store)')
+        raise TypeError(
+            'store must provide a browser array backend (e.g. session.store)'
+        )
     metadata, _ = await backend.array_request('zarr_open', path=path)
     actual = metadata.get('kind')
     if kind is not None and actual != kind:

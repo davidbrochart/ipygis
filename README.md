@@ -20,6 +20,19 @@ When making changes to the JavaScript code, you can just recompile that part:
 jlpm run build
 ```
 
+Install the Python test and lint tools with `pip install -e '.[test]'`, then run:
+
+```bash
+python -m ruff check ipygis tests
+python -m ruff format --check ipygis tests
+python -m pytest tests
+```
+
+Ruff checks basic Python errors and import ordering. To apply its automatic
+fixes, use `python -m ruff check ipygis tests --fix`. Format the Python code with
+`python -m ruff format ipygis tests`; the formatter is configured to use single
+quotes.
+
 ## Running the example notebooks
 
 Run `examples/build_time.ipynb` first to create the Icechunk repository. This notebook

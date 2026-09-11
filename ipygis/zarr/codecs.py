@@ -1,4 +1,5 @@
 """TIFF LZW codec registered with Zarr Python's standard codec registry."""
+
 from __future__ import annotations
 
 import math
@@ -46,4 +47,4 @@ class BrowserLzwCodec(BytesBytesCodec):
         raise NotImplementedError('LZW encoded size is variable')
 
 
-register_codec("imagecodecs_lzw", BrowserLzwCodec)
+register_codec('imagecodecs_lzw', BrowserLzwCodec)
