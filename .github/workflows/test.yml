@@ -49,4 +49,4 @@ jobs:
         run: python -m ruff format --check ipygis tests
 
       - name: Run Python tests
-        run: python -m pytest tests -v
+        run: python -m pytest --color=yes tests -v

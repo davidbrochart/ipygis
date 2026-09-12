@@ -188,17 +188,29 @@ async def test_notebook_georeferencing():
     code = next(
         ''.join(c['source'])
         for c in runtime['cells']
-        if 'mosaic = await mosaic_async' in ''.join(c['source'])
+        if 'await mosaic_async(' in ''.join(c['source'])
     )
-    namespace.update(ds=ds, np=np, mosaic_async=mosaic_async)
+    datasets = {}
+    for name, dtype, fill in [('acc', 'float64', -9999.0), ('dir', 'uint8', 255)]:
+        first = ds.astype(dtype)
+        first['0'].attrs['_FillValue'] = fill
+        # Leave a tile-sized gap to exercise each dataset's nodata value.
+        second = first.assign_coords(tile=['20_14'], tile_x=('tile', [14.0]))
+        datasets[name] = xr.concat([first, second], dim='tile')
+    namespace.update(ds=datasets, np=np, mosaic_async=mosaic_async)
     await eval(
         compile(code, 'mosaic example', 'exec', flags=ast.PyCF_ALLOW_TOP_LEVEL_AWAIT),
         namespace,
     )
-    mosaic = namespace['mosaic']
-    np.testing.assert_equal(mosaic.longitude.values, [10.25, 10.75, 11.25, 11.75])
-    np.testing.assert_equal(mosaic.latitude.values, [19.875, 19.625, 19.375])
-    assert (await mosaic.sel(latitude=19.625, longitude=11.25).load_async()).item() == 6
+    assert set(namespace['mosaic']) == {'acc', 'dir'}
+    for name, mosaic in namespace['mosaic'].items():
+        np.testing.assert_equal(mosaic.longitude.values, 10.25 + np.arange(12) * 0.5)
+        np.testing.assert_equal(mosaic.latitude.values, [19.875, 19.625, 19.375])
+        assert mosaic.dtype == datasets[name]['0'].dtype
+        point = await mosaic.sel(latitude=19.625, longitude=11.25).load_async()
+        assert point.item() == 6
+        gap = await mosaic.isel(longitude=slice(4, 8)).load_async()
+        assert np.all(gap.values == datasets[name]['0'].attrs['_FillValue'])
     for changed, match in [
         ({'geographic_type': 3857}, 'WGS84'),
         ({'raster_type': 2}, 'PixelIsArea'),
