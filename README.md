@@ -9,7 +9,7 @@ A bridge to GIS libraries running in the browser.
 ```bash
 micromamba create -n ipygis
 micromamba activate ipygis
-micromamba install xeus-python pip "nodejs<25"
+micromamba install xeus-python pip nodejs
 pip install jupyterlab -e .
 jupyter labextension develop --overwrite .
 ```
