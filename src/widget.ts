@@ -19,7 +19,11 @@ export class GISModel extends DOMWidgetModel {
   initialize(...args: Parameters<DOMWidgetModel['initialize']>) {
     super.initialize(...args);
     this.bridge = new IcechunkBridge(this, GISModel.contentsManager);
-    this.arrays = new ZarrBridge(this, id => this.bridge.getStore(id));
+    this.arrays = new ZarrBridge(
+      this,
+      (id) => this.bridge.getStore(id),
+      GISModel.contentsManager,
+    );
     this.send({ type: 'icechunk_ready' }, this.callbacks());
   }
 

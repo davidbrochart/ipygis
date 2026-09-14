@@ -152,3 +152,49 @@ construct this mosaic at runtime from the tile origins and pixel spacing. A
 single stored virtual grid cannot join these TIFFs because their edges fall
 inside the mosaic's chunks. The mosaic reader handles those boundaries after
 Zarrita decodes the selected source chunks.
+
+## Asynchronous Zarr exports
+
+Write an xarray Dataset to a new directory through Jupyter Contents:
+
+```python
+from ipygis.xarray import to_zarr_async
+
+await to_zarr_async(
+    region.to_dataset(name="elevation"),
+    "exports/region.zarr",
+    encoding={"elevation": {"chunks": (256, 256)}},
+)
+```
+
+The path is relative to the Jupyter contents root. JupyterLab saves the files on
+its server; JupyterLite uses its configured browser storage. The writer uses
+`app.serviceManager.contents` and base64 file writes. Zarrita encodes the chunks
+in the browser, while Python loads and transfers one output chunk at a time.
+Default numeric chunks are approximately 1 MiB or smaller. No Python filesystem
+access or synchronous Zarr API is used.
+
+The output is a regular, uncompressed Zarr v3 group with dimensions, coordinates,
+and JSON attributes. Numeric and string arrays are supported; object arrays must
+contain only strings. Source storage encodings are not copied: decoded values
+are exported. Only the `chunks` output encoding option is currently supported.
+Datetimes, booleans, complex arrays, appending, region writes, and consolidated
+metadata are not yet supported.
+
+Existing destinations are rejected (`mode="w-"`). Do not export concurrently to
+the same path: Jupyter Contents does not offer atomic exclusive creation. An
+interrupted or failed export may leave a partial directory; inspect or remove it
+before retrying. Source sessions must remain open until the export completes.
+
+Reopen an exported store through the same Jupyter Contents service:
+
+```python
+from ipygis.xarray import open_zarr_async
+
+with await open_zarr_async("exports/region.zarr") as ds:
+    region = await ds.isel(latitude=slice(0, 100)).load_async()
+```
+
+Use the dimension names present in your dataset. A path-based dataset owns its
+browser connection; close it after the required async reads, using `with` as
+above or `ds.close()`. Already loaded results remain usable after closing.
