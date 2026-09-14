@@ -178,3 +178,79 @@ async def test_string_coordinate_selection():
     array = await open_array(backend, path='y')
     assert await array.getitem(1) == 'é🌍'
     assert (await array.getitem(slice(1, 1))).shape == (0,)
+
+
+def contents_connection(monkeypatch, transport):
+    from types import SimpleNamespace
+
+    class Connection:
+        def __init__(self):
+            self._ready = anyio.Event()
+            self._ready.set()
+            self._widget = SimpleNamespace(close=self.close)
+            self.requests = []
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+        async def _request(self, operation, *, message_type, **args):
+            assert message_type == 'zarr_request'
+            self.requests.append((operation, args))
+            if operation == 'contents_open':
+                return {'store_id': 'contents'}, []
+            assert args.pop('store_id') == 'contents'
+            return await transport.array_request(operation, **args)
+
+    connection = Connection()
+    monkeypatch.setattr('ipygis.gis.GIS', lambda: connection)
+    return connection
+
+
+async def test_contents_path_open_and_close(monkeypatch):
+    transport = Transport()
+    connection = contents_connection(monkeypatch, transport)
+    with await open_zarr_async('tmp/ws/0', group='nested') as ds:
+        assert connection.requests[0] == ('contents_open', {'path': 'tmp/ws/0'})
+        assert transport.reads == ['y', 'x']
+        result = await ds.isel(y=1, x=2).load_async()
+        assert result.elevation.item() == 6
+    assert connection.closed
+    with pytest.raises(RuntimeError, match='closed'):
+        await ds.isel(y=0, x=0).load_async()
+    assert result.elevation.item() == 6
+
+
+async def test_contents_path_open_failure_closes_connection(monkeypatch):
+    transport = Transport()
+    transport.dims['elevation'] = None
+    connection = contents_connection(monkeypatch, transport)
+    with pytest.raises(ValueError, match='dimension metadata'):
+        await open_zarr_async('tmp/ws/0')
+    assert connection.closed
+    connection.closed = False
+
+    async def fail(*args, **kwargs):
+        raise RuntimeError('Missing directory')
+
+    connection._request = fail
+    with pytest.raises(RuntimeError, match='Missing directory'):
+        await open_zarr_async('missing.zarr')
+    assert connection.closed
+
+
+async def test_contents_open_cancellation(monkeypatch):
+    transport = Transport()
+    connection = contents_connection(monkeypatch, transport)
+    entered = anyio.Event()
+
+    async def block(*args, **kwargs):
+        entered.set()
+        await anyio.sleep_forever()
+
+    connection._request = block
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(open_zarr_async, 'tmp/ws/0')
+        await entered.wait()
+        tg.cancel_scope.cancel()
+    assert connection.closed

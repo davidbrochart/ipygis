@@ -2,7 +2,7 @@
   "compilerOptions": {
     "declaration": true,
     "esModuleInterop":true,
-    "lib": ["es2018", "dom"],
+    "lib": ["es2018", "es2020.bigint", "dom"],
     "module": "esnext",
     "moduleResolution": "node",
     "noEmitOnError": true,

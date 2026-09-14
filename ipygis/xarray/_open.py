@@ -10,8 +10,7 @@ from xarray.backends import BackendArray
 from xarray.backends.zarr import FillValueCoder
 from xarray.core import indexing
 
-from ._mosaic import mosaic_async as mosaic_async
-from .zarr import asynchronous as zarr
+from ..zarr import asynchronous as zarr
 
 
 class _BrowserArray(BackendArray):
@@ -63,9 +62,35 @@ async def open_zarr_async(
     _FillValue/missing_value attributes. Numeric and Zarr v3 string browser arrays are
     supported. Advanced selections may fetch a larger bounding region.
 
-    The returned dataset borrows the store. Closing it does not close the
+    A string store is a path relative to the Jupyter contents root, as with
+    to_zarr_async. Files are read through the browser contents manager. Close
+    the returned dataset (or use it as a context manager) to release its owned
+    browser connection after reading.
+
+    When passed a store object, the returned dataset borrows the store. Closing it does not close the
     session; keep the session open until all async reads have finished.
     """
+    if isinstance(store, str):
+        from ..zarr._contents import ContentsArrayBackend
+
+        backend = await ContentsArrayBackend.open(store)
+        try:
+            dataset = await open_zarr_async(
+                backend,
+                group=group,
+                create_default_indexes=create_default_indexes,
+                decode_cf=decode_cf,
+                mask_and_scale=mask_and_scale,
+                decode_times=decode_times,
+                decode_timedelta=decode_timedelta,
+                decode_coords=decode_coords,
+                drop_variables=drop_variables,
+            )
+        except BaseException:
+            backend.close()
+            raise
+        dataset.set_close(backend.close)
+        return dataset
     root = await zarr.open_group(store, path=group)
     dropped = (
         {drop_variables}
